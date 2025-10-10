@@ -1,0 +1,15 @@
+[Unit]
+Description=SecureFileX
+
+[Service]
+WorkingDirectory=/root/securefilex/server
+ExecStart=/usr/bin/node /root/securefilex/server/server.js
+Type=simple
+Restart=always
+#User=nobody
+#Group=nogroup
+Environment="PATH=/usr/bin:/usr/local/bin"
+Environment="NODE_ENV=production"
+
+[Install]
+WantedBy=multi-user.target

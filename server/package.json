@@ -1,0 +1,13 @@
+{
+  "name": "securefilex",
+  "version": "0.3.1",
+  "main": "server.js",
+  "author": "Ausca Lai",
+  "dependencies": {
+    "busboy": "^0.2.12",
+    "express": "^4.21.2",
+    "multer": "^1.1.0",
+    "request": "~2.69.0",
+    "tmp": "0.0.28"
+  }
+}
