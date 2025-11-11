@@ -15,7 +15,7 @@ upload.modules.addmodule({
             <div class="centerview">\
             <div id="pastearea" class="boxarea">\
                 <h2>Add Your File</h2>\
-                <h3>(25 MB Limit)</h3>\
+                <h3>(∞ File Size Limit)</h3>\
             </div>\
             <div class="hidden boxarea" id="uploadprogress">\
                 <h1 id="progresstype"></h1>\

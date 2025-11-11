@@ -21,7 +21,6 @@ function handle_upload(req, res) {
     var busboy = new Busboy({
         headers: req.headers,
         limits: {
-            fileSize: config.maximum_file_size,
             files: 1,
             parts: 3
         }
