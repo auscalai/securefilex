@@ -5,7 +5,6 @@ upload.load.need('js/updown.js', function() { return upload.updown })
 
 upload.modules.addmodule({
     name: 'home',
-    // Dear santa, https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/template_strings
     template: '\
         <div class="topbar">\
         <div class="viewswitcher">\
@@ -23,14 +22,24 @@ upload.modules.addmodule({
                 <h1 id="progressamount"></h1>\
                 <div id="progressamountbg"></div>\
             </div>\
-            <div class="hidden" id="uploadfinish">\
-                <h1><a href="" id="finallink">Link</a></h1>\
-            </div>\
             <form>\
                 <input type="file" id="filepicker" class="hidden" />\
             </form>\
             </div>\
-        </div>',
+        </div>\
+        <div id="upload_password_modal_overlay" class="hidden modal password-modal-global">\
+            <div class="boxarea password-card-global" id="passwordmodal_card">\
+                <h2 class="password-title-global">Set a Password</h2>\
+                <p style="margin-bottom: 25px; color: #eee; opacity: 0.8;">This password will be required to decrypt the file.</p>\
+                <form id="passwordform" style="width: 100%;">\
+                    <input type="password" id="passwordfield" placeholder="Enter password..." class="password-input-global" />\
+                    <button type="submit" class="btn password-btn-global" id="upload_submit_btn">Encrypt & Upload</button>\
+                    <button type="button" id="cancelupload" class="btn password-btn-global cancel-btn">Cancel</button>\
+                    <div id="upload_password_error_msg" class="password-error-global" style="min-height: 1.2em;"></div>\
+                </form>\
+            </div>\
+        </div>\
+        ',
     init: function () {
         upload.modules.setdefault(this)
         $(document).on('change', '#filepicker', this.pickerchange.bind(this))
@@ -42,6 +51,9 @@ upload.modules.addmodule({
         $(document).on('click', this.triggerfocuspaste.bind(this))
         this.initpastecatcher()
         $(document).on('paste', this.pasted.bind(this))
+
+        $(document).on('submit', '#passwordform', this.submitpassword.bind(this))
+        $(document).on('click', '#cancelupload', this.cancelupload.bind(this))
     },
     dragleave: function (e) {
         e.preventDefault()
@@ -86,6 +98,13 @@ upload.modules.addmodule({
         this._.progress.type = view.find('#progresstype')
         this._.progress.amount = view.find('#progressamount')
         this._.progress.bg = view.find('#progressamountbg')
+        
+        this._.passwordmodal = view.find('#upload_password_modal_overlay')
+        this._.passwordfield = view.find('#passwordfield')
+        this._.uploadview = view.find('#uploadview')
+        this._.uploadErrorMsg = view.find('#upload_password_error_msg')
+        this._.passwordCard = view.find('#passwordmodal_card')
+
         $('#footer').show()
     },
     initroute: function () {
@@ -125,12 +144,76 @@ upload.modules.addmodule({
         this._.progress.amount.text(Math.floor(percent) + '%')
     },
     doupload: function (blob) {
-        this._.pastearea.addClass('hidden')
-        this._.progress.main.removeClass('hidden')
-        this._.progress.type.text('Encrypting Locker')
-        this._.progress.bg.css('width', 0)
-        this._.newpaste.addClass('hidden')
-        upload.updown.upload(blob, this.progress.bind(this), this.uploaded.bind(this))
+        this._.uploadblob = blob;
+        this._.uploadview.addClass('hidden');
+        this._.passwordmodal.removeClass('hidden');
+        this._.passwordfield.focus();
+        this._.uploadErrorMsg.text('');
+
+        anime.remove(this._.passwordCard[0]);
+        anime({
+            targets: this._.passwordCard[0],
+            scale: [0.9, 1],
+            opacity: [0, 1],
+            duration: 400,
+            easing: 'easeOutQuad'
+        });
+    },
+    cancelupload: function() {
+        var self = this;
+        anime({
+            targets: self._.passwordCard[0],
+            scale: [1, 0.9],
+            opacity: [1, 0],
+            duration: 300,
+            easing: 'easeInQuad',
+            complete: function() {
+                self._.uploadblob = null;
+                self._.passwordmodal.addClass('hidden');
+                self._.passwordfield.val('');
+                self._.uploadview.removeClass('hidden');
+            }
+        });
+    },
+    submitpassword: function(e) {
+        e.preventDefault();
+        var self = this;
+        var password = this._.passwordfield.val();
+        
+        if (!password) {
+            this._.uploadErrorMsg.text("Please enter a password.");
+            
+            anime.remove(self._.passwordCard[0]);
+            anime({
+                targets: self._.passwordCard[0],
+                translateX: [-10, 10, -10, 10, 0],
+                duration: 300,
+                easing: 'easeInOutSine'
+            });
+            return;
+        }
+
+        anime({
+            targets: self._.passwordCard[0],
+            scale: [1, 0.9],
+            opacity: [1, 0],
+            duration: 300,
+            easing: 'easeInQuad',
+            complete: function() {
+                self._.passwordmodal.addClass('hidden');
+                self._.passwordfield.val('');
+                self._.uploadErrorMsg.text('');
+                
+                self._.pastearea.addClass('hidden')
+                self._.progress.main.removeClass('hidden')
+                self._.progress.type.text('Encrypting Locker')
+                self._.progress.bg.css('width', 0)
+                self._.newpaste.addClass('hidden')
+                
+                upload.updown.upload(self._.uploadblob, self.progress.bind(self), self.uploaded.bind(self), password)
+                self._.uploadblob = null;
+            }
+        });
     },
     closepaste: function() {
       this._.pastearea.removeClass('hidden')
@@ -163,8 +246,8 @@ upload.modules.addmodule({
         this.dopasteupload('')
     },
     pasted: function (e) {
-        if (!this._ || this._.pastearea.hasClass('hidden')) {
-            return
+        if (!this._ || this._.pastearea.hasClass('hidden') || !this._.uploadview.is(':visible')) {
+            return;
         }
 
         var items = e.clipboardData.items
@@ -182,7 +265,6 @@ upload.modules.addmodule({
                     if (src.startsWith('data:')) {
                         self.doupload(dataURItoBlob(src))
                     } else {
-                        // TODO: Firefox
                     }
                 }
             }, 0)

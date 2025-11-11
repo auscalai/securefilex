@@ -36,10 +36,6 @@
       this.cb = callback
       return this
     },
-    then: function(callback) {
-      this.deferred.then(callback)
-      return this
-    },
     need: function(filename, test) {
       this.loaded += 1
       if(!this.load(filename, test, this.doneloaded.bind(this))) {
@@ -67,13 +63,6 @@
   }
 
   upload.modules.addmodule({
-      name: 'footer',
-      init: function() {
-          $('#footer').html(upload.config.footer)
-      }
-  })
-
-  upload.modules.addmodule({
       name: 'route',
       init: function () {
           window.addEventListener('hashchange', this.hashchange.bind(this))
@@ -82,7 +71,6 @@
       setroute: function (module, routeroot, route) {
           view = $('.modulecontent.modulearea')
           if (!this.currentmodule || this.currentmodule != module) {
-              // TODO: better
               if (this.currentmodule) {
                   this.currentmodule.unrender()
               }

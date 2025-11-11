@@ -62,7 +62,6 @@
 #create_linenos {
     color: #C5C8C6;
     float: left;
-    /*font-family: monospace;*/
     font-family: "Ubuntu", "Lucida Sans Unicode", "Lucida Grande", "Arial", sans-serif;
     left: 5px;
     overflow: hidden;
@@ -84,12 +83,11 @@
 }
 
 .line .linenum {
-    -webkit-user-select: none;    /* Chrome all / Safari all */
-    -moz-user-select: none;         /* Firefox all */
-    -ms-user-select: none;            /* IE 10+ */
-    user-select: none;                    /* Likely future */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
     color: #C5C8C6;
-    /*font-family: monospace;*/
     font-family: "Ubuntu", "Lucida Sans Unicode", "Lucida Grande", "Arial", sans-serif;
     padding: 0 15px 0 10px;
     text-align: center;
@@ -285,7 +283,6 @@
     border: 0 none;
     box-sizing: border-box;
     color: #C5C8C6!important;
-    /*font-family: monospace!important;*/
     font-family: "Ubuntu", "Lucida Sans Unicode", "Lucida Grande", "Arial", sans-serif;
     font-size: 13px;
     height: calc(100% - 5px);
@@ -351,7 +348,6 @@ body {
 }
 
 body,html {
-    /*font-family: Sans-Serif;*/
     font-family: "Ubuntu", "Lucida Sans Unicode", "Lucida Grande", "Arial", sans-serif;
     height: 100%;
     margin: 0;
@@ -363,19 +359,16 @@ body,html {
     float: right;
 }
 
-/* top line > pointer in memo/paste view */
 #create_linenos {
 color: #fff;
 }
 
-/* textarea for memo/paste */
 .previewtext > textarea, .preview .previewtext, #downloaded_text {
 background: rgba(33,62,109,.6);
 color: #eee;
 font-size: 1.3em;
 }
 
-/* memo/paste text after saving */
 #downloaded_text .line {
 font-size: 1.3em;
 line-height: 1.6em;
@@ -383,108 +376,192 @@ color: #eee;
 }
 
 
-/* memo/paste line numbers after saving */
 #downloaded_text .linenum {
 font-size: .6em;
 line-spacing: 4px;
-color: #37BBFF; /* blue */
+color: #37BBFF;
 }
 
-/* "Untitled-Memo.txt" filename before save */
 #create_filename {
-color: #FF7237; /* orange */
+color: #FF7237;
 text-align: center;
 font-size: 1.1em;
 font-weight: 500;
 }
 
-/* filename after save */
 #downloaded_filename {
-color: #FF7237; /* orange */
+color: #FF7237;
 }
 
-/* "Edit Memo" button */
 #editpaste.btn {
-color: #37BBFF; /* blue */
+color: #37BBFF;
 font-weight: 500;
-border: 2px solid #37BBFF; /* blue */
+border: 2px solid #37BBFF;
 }
 
-/* "New Locker" button */
 #newupload.btn {
-color: #5EFF7F; /* green */
+color: #5EFF7F;
 font-weight: 500;
-border: 2px solid #5EFF7F; /* green */
+border: 2px solid #5EFF7F;
 }
 
-/* "Download" button */
 #dlbtn.btn {
-color: #5EFF7F; /* green */
+color: #5EFF7F;
 font-weight: 500;
-border: 2px solid #5EFF7F; /* green */
+border: 2px solid #5EFF7F;
 }
 
-/* "Write a Memo" button */
 #newpaste.btn {
-color: #5EFF7F; /* green */
+color: #5EFF7F;
 font-weight: 500;
-border: 2px solid #5EFF7F; /* green */
+border: 2px solid #5EFF7F;
 }
 
-/* "Save Memo" button */
 #newpaste.btn {
-color: #5EFF7F; /* green */
+color: #5EFF7F;
 font-weight: 500;
-border: 2px solid #5EFF7F; /* green */
+border: 2px solid #5EFF7F;
 }
 
-/* "View in Browser" button */
 #inbrowserbtn.btn {
-color: #37BBFF; /* blue */
+color: #37BBFF;
 font-weight: 500;
-border: 2px solid #37BBFF; /* blue */
+border: 2px solid #37BBFF;
 }
 
-/* "Delete" button */
 #deletebtn.btn {
-color: #FF7237; /* orange */
+color: #FF7237;
 font-weight: 500;
-border: 2px solid #FF7237; /* orange */
+border: 2px solid #FF7237;
 }
 
-/* "Save Memo" button */
 .viewswitcher button.btn {
-color: #5EFF7F; /* green */
+color: #5EFF7F;
 font-weight: 500;
-border: 2px solid #5EFF7F; /* green */
+border: 2px solid #5EFF7F;
 }
 
-/* "Go Back" button */
 #retbtn.btn {
-color: #37BBFF; /* blue */
+color: #37BBFF;
 font-weight: 500;
-border: 2px solid #37BBFF; /* blue */
+border: 2px solid #37BBFF;
 }
 
-/* Download text */
 #downloadprogress {
-color: #FF7237; /* orange */
+color: #FF7237;
 }
 
-/* outer upload box border */
 #uploadview {
-border: 2px dashed #FF7237; /* orange */
+border: 2px dashed #FF7237;
 }
 
-/* "Add Your File" area */
 #uploadview, #pastearea.boxarea, #pastearea.boxarea h2 {
-color: #FF7237; /* orange */
+color: #FF7237;
 font-weight: 500;
 }
 
-/* "Add Your File" area */
 #pastearea.boxarea h3 {
-color: #FF7237; /* orange */
+color: #FF7237;
 font-weight: 500;
 }
 
+.password-input-global,
+#passwordmodal input[type="password"] {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 20px;
+    border-radius: 6px;
+    border: 1px solid #37BBFF;
+    background-color: #0a192f;
+    color: #fff;
+    font-size: 16px;
+    box-sizing: border-box;
+    transition: all 0.2s ease-in-out;
+}
+
+.password-input-global:focus,
+#passwordmodal input[type="password"]:focus {
+    border-color: #5EFF7F;
+    box-shadow: 0 0 10px rgba(94, 255, 127, 0.5);
+}
+
+
+.password-btn-global,
+#passwordmodal button {
+    display: block; 
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+    margin-top: 5px;
+    margin-left: 0;
+    box-sizing: border-box;
+    transition: all 0.2s ease-in-out;
+}
+
+#upload_submit_btn {
+    color: #5EFF7F;
+    border-color: #5EFF7F;
+}
+#upload_submit_btn:hover {
+    background-color: #5EFF7F;
+    color: #021327;
+    box-shadow: 0 0 10px rgba(94, 255, 127, 0.5);
+}
+
+.cancel-btn {
+    color: #FF7237;
+    border-color: #FF7237;
+    background-color: transparent;
+    margin-top: 10px;
+}
+.cancel-btn:hover {
+    background-color: #FF7237;
+    color: #021327;
+    box-shadow: 0 0 10px rgba(255, 114, 55, 0.5);
+}
+
+.password-modal-global {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.8);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.password-card-global {
+    padding: 30px;
+    background-color: #021327;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    color: #fff;
+    border: 1px solid #37BBFF;
+}
+
+.password-title-global {
+    margin-bottom: 20px;
+    color: #fff;
+}
+
+.password-btn-global {
+    color: #5EFF7F;
+    border-color: #5EFF7F;
+}
+.password-btn-global:hover {
+    background-color: #5EFF7F;
+    color: #021327;
+    box-shadow: 0 0 10px rgba(94, 255, 127, 0.5);
+}
+
+.password-error-global {
+    color: #f87171;
+    margin-top: 15px;
+    font-size: 14px;
+}
