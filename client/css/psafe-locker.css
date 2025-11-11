@@ -550,11 +550,12 @@ font-weight: 500;
     color: #fff;
 }
 
-.password-btn-global {
+.password-btn-global:not(.cancel-btn) {
     color: #5EFF7F;
     border-color: #5EFF7F;
 }
-.password-btn-global:hover {
+
+.password-btn-global:not(.cancel-btn):hover {
     background-color: #5EFF7F;
     color: #021327;
     box-shadow: 0 0 10px rgba(94, 255, 127, 0.5);
