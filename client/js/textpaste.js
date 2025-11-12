@@ -25,9 +25,9 @@ upload.modules.addmodule({
         }
       )
       blob.name = this.current.find('#create_filename').val()
-      window.location = '#noref'
       upload.route.setroute(upload.home)
       upload.home.doupload(blob)
+      upload.home.state.isTextPaste = true;
     },
     cleanup: function() {
       delete this['closeback']
