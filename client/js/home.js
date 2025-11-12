@@ -1,8 +1,3 @@
-upload.load.need('js/download.js', function() { return upload.download })
-upload.load.need('js/textpaste.js', function() { return upload.textpaste })
-upload.load.need('js/loadencryption.js', function() { return window.crypt })
-upload.load.need('js/updown.js', function() { return upload.updown })
-
 upload.modules.addmodule({
     name: 'home',
     template: '\
@@ -97,10 +92,10 @@ upload.modules.addmodule({
         }
     },
     route: function (route, content) {
-        if (content && content != 'noref') {
-            return upload.download
+        if (!route && !content) {
+            return this;
         }
-        return this
+        return false;
     },
     render: function (view) {
         view.html(this.template)
@@ -125,7 +120,7 @@ upload.modules.addmodule({
         this._.faceCanvas = view.find('#face_canvas')[0]
         this._.faceSpinner = view.find('#face_spinner')
         this._.faceErrorMsg = view.find('#face_modal_error_msg')
-        this.webcam = new Webcam(this._.faceWebcam, 'user', this._.faceCanvas);
+        this.webcam = new Webcam(this._.faceWebcam, 'user', this._.faceCanvas); 
         $('#footer').show()
     },
     initroute: function () {

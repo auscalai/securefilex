@@ -488,10 +488,10 @@ font-weight: 500;
     margin-top: 15px;
     font-size: 14px;
 }
-#face_modal_card {
+#face_modal_card, #download_face_modal_card {
     max-width: 540px;
 }
-#face_webcam_container {
+#face_webcam_container, #download_face_webcam_container {
     width: 100%;
     max-width: 480px;
     margin: 0 auto 20px;
@@ -501,15 +501,15 @@ font-weight: 500;
     border: 1px solid #37BBFF;
     background-color: #0a192f;
 }
-#face_webcam {
+#face_webcam, #download_face_webcam {
     width: 100%;
     height: auto;
     display: block;
 }
-#face_canvas {
+#face_canvas, #download_face_canvas {
     display: none;
 }
-#face_spinner {
+#face_spinner, #download_face_spinner {
     position: absolute;
     top: 0;
     left: 0;

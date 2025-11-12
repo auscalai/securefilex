@@ -2,11 +2,8 @@
   "use strict";
   window.upload = {}
 }(window));
-
-
 (function(upload) {
   upload.config = {}
-
   upload.load = {
     loaded: 0,
     doneloaded: function() {
@@ -44,7 +41,6 @@
       return this
     }
   }
-
   upload.modules = {
       modules: [],
       addmodule: function (module) {
@@ -52,7 +48,7 @@
           upload[module.name] = module
       },
       initmodule: function (module) {
-          module.init()
+          if (module.init) module.init()
       },
       setdefault: function (module) {
           this.default = module
@@ -61,15 +57,13 @@
           this.modules.forEach(this.initmodule.bind(this))
       }
   }
-
   upload.modules.addmodule({
       name: 'route',
       init: function () {
           window.addEventListener('hashchange', this.hashchange.bind(this))
-          this.hashchange()
       },
       setroute: function (module, routeroot, route) {
-          view = $('.modulecontent.modulearea')
+          var view = $('.modulecontent.modulearea')
           if (!this.currentmodule || this.currentmodule != module) {
               if (this.currentmodule) {
                   this.currentmodule.unrender()
@@ -78,7 +72,9 @@
               view.id = 'module_' + module.name
               module.render(view)
           }
-          module.initroute(route, routeroot)
+          if (module.initroute) {
+            module.initroute(route, routeroot)
+          }
       },
       tryroute: function (route) {
           var isroot = route.startsWith('/')
@@ -110,16 +106,26 @@
       }
   })
 }(window.upload));
-
-
 (function () {
-upload.load.needsome().need('config.js').need('js/shims.js').need('deps/zepto.min.js').done(function() {
-    upload.load.needsome().need('js/home.js', function() {return upload.home}).done(function() {
-      if (typeof upload.config != 'undefined') {
-          upload.modules.init()
-      } else {
-          alert("Please configure with config.js (see config.js.example)")
-      }
-    })
-})
+    upload.load.needsome()
+        .need('config.js')
+        .need('js/shims.js')
+        .need('deps/zepto.min.js')
+    .done(function() {
+        upload.load.needsome()
+            .need('js/loadencryption.js', function() { return window.crypt })
+            .need('js/updown.js', function() { return upload.updown })
+            .need('js/textpaste.js', function() { return upload.textpaste })
+            .need('js/dragresize.js', function() { return window.dragresize })
+            .need('js/download.js', function() { return upload.download })
+            .need('js/home.js', function() {return upload.home})
+        .done(function() {
+            if (typeof upload.config != 'undefined') {
+                upload.modules.init();
+                upload.route.hashchange(); 
+            } else {
+                alert("Please configure with config.js (see config.js.example)")
+            }
+        });
+    });
 }(upload))

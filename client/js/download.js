@@ -1,5 +1,3 @@
-upload.load.need('js/dragresize.js', function() { return window.dragresize })
-
 function setupPasswordPrompt() {
     if (window.getPassword) { return; }
     var modal = $('<div>').attr('id', 'password_modal').addClass('modal hidden password-modal-global');
@@ -79,11 +77,8 @@ function setupPasswordPrompt() {
     }
 }
 setupPasswordPrompt();
-
-// --- NEW: Face Scan Prompt UI (similar to home.js) ---
 function setupFaceScanPrompt() {
     if (window.getFaceScan) { return; }
-
     var modal = $('<div>').attr('id', 'download_face_modal').addClass('modal hidden password-modal-global');
     var card = $('<div>').addClass('boxarea password-card-global').attr('id', 'download_face_modal_card');
     var title = $('<h2>').text('Facial Verification Required').addClass('password-title-global');
@@ -93,18 +88,14 @@ function setupFaceScanPrompt() {
     var canvas = $('<canvas>').attr('id', 'download_face_canvas');
     var spinner = $('<div>').attr('id', 'download_face_spinner').addClass('hidden').html('<div class="spinner"></div>');
     webcamContainer.append(video, canvas, spinner);
-    
     var btnCapture = $('<button>').addClass('btn password-btn-global').text('Verify My Face').attr('id', 'download_capture_face_btn');
     var btnSkip = $('<button>').addClass('btn password-btn-global cancel-btn').text('Cancel Download').attr('id', 'download_skip_face_btn');
     var errorMsg = $('<div>').attr('id', 'download_face_error_msg').addClass('password-error-global').css({minHeight: '1.2em'});
-    
     card.append(title, p, webcamContainer, btnCapture, btnSkip, errorMsg);
     modal.append(card);
     $('body').append(modal);
-
     var currentDeferred = null;
     var webcam = new Webcam(video[0], 'user', canvas[0]);
-
     $('#download_capture_face_btn').on('click', function() {
         var faceDataUri = webcam.snap();
         if (!faceDataUri) {
@@ -118,7 +109,6 @@ function setupFaceScanPrompt() {
             currentDeferred = null;
         }
     });
-
     $('#download_skip_face_btn').on('click', function() {
         webcam.stop();
         modal.addClass('hidden');
@@ -127,7 +117,6 @@ function setupFaceScanPrompt() {
             currentDeferred = null;
         }
     });
-
     window.getFaceScan = function(errorMsgText) {
         if (currentDeferred) {
             currentDeferred.reject('Cancelled by new request');
@@ -136,7 +125,6 @@ function setupFaceScanPrompt() {
         modal.removeClass('hidden');
         spinner.addClass('hidden');
         $('#download_face_error_msg').text(errorMsgText || '');
-        
         anime.remove(card[0]);
         if (errorMsgText) {
              anime({
@@ -154,17 +142,14 @@ function setupFaceScanPrompt() {
                 easing: 'easeOutQuad'
             });
         }
-
         webcam.start()
             .then(function(result) { console.log("Download webcam started"); })
             .catch(function(err) {
                 console.error("Error starting download webcam:", err);
                 $('#download_face_error_msg').text("Could not start webcam. Please allow camera access.");
             });
-
         return currentDeferred.promise();
     };
-
     window.stopFaceScan = function() {
         webcam.stop();
         modal.addClass('hidden');
@@ -175,9 +160,6 @@ function setupFaceScanPrompt() {
     }
 }
 setupFaceScanPrompt();
-// --- END NEW ---
-
-
 upload.modules.addmodule({
     name: 'download',
     delkeys: {},
@@ -185,13 +167,12 @@ upload.modules.addmodule({
     init: function () {
       $(document).on('click', '#editpaste', this.editpaste.bind(this))
     },
-    
-    route: function (route, content) {
-        if (content != 'noref') {
-            return this
+    route: function (routeroot, content) {
+        if (!routeroot && content) {
+            return this;
         }
+        return false;
     },
-    
     render: function (view) {
         view.html(this.template)
         this._ = {}
@@ -212,7 +193,6 @@ upload.modules.addmodule({
         this._.detailsarea.empty().append(this._.content.main);
         $('#footer').hide()
     },
-
     initroute: function (content, contentroot) {
         contentroot = contentroot ? contentroot : content;
         delete this._['text'];
@@ -226,12 +206,10 @@ upload.modules.addmodule({
         this._.deletebtn.hide();
         upload.updown.download(content, this.progress.bind(this), this.downloaded.bind(this));
     },
-
     unrender: function () {
         this._.title.text('SecureFile Locker')
         delete this['_']
     },
-
     assocations: {
       'application/javascript': 'text',
       'application/x-javascript': 'text',
@@ -284,19 +262,12 @@ upload.modules.addmodule({
         $(e).prepend($('<span>').addClass('linenum').text(i + 1))
       })
     },
-
     downloaded: function (data) {
         $('#password_modal').addClass('hidden');
+        $('#download_face_modal').addClass('hidden');
         this._.filename.text(data.header.name);
         this._.title.text(data.header.name + ' - SecureFile Locker');
-        var stored = this.delkeys[data.ident];
-        if (!stored) {
-            try {
-                stored = localStorage.getItem('delete-' + data.ident);
-            } catch (e) {
-                console.log(e);
-            }
-        }
+        var stored = localStorage.getItem('delete-' + data.ident);
         if (stored && !isiframed()) {
             this._.deletebtn.show().prop('href', (upload.config.server ? upload.config.server : '') + 'del?delkey=' + stored + '&ident=' + data.ident);
         }
@@ -318,7 +289,7 @@ upload.modules.addmodule({
         if (association == 'image' || association == 'svg') {
             var imgcontent = $('<div>').prop('id', 'previewimg').addClass('preview centerable').appendTo(this._.detailsarea);
             var previewimg = $('<img>').addClass('dragresize').appendTo(imgcontent).prop('src', url);
-      } else if (association == 'text') {
+        } else if (association == 'text') {
             var textcontent = $('<div>').prop('id', 'downloaded_text').addClass('preview').addClass('previewtext').appendTo(this._.detailsarea);
             var pre = $('<pre>').appendTo(textcontent);
             var code = $('<code>').appendTo(pre);
@@ -334,9 +305,9 @@ upload.modules.addmodule({
             }.bind(this);
             fr.readAsText(data.decrypted);
             this._.editpaste.show();
-      } else if (association == 'video') {
+        } else if (association == 'video') {
             $('<div>').addClass('preview centerable').append($('<video>').prop('controls', true).prop('autoplay', true).prop('src', url)).appendTo(this._.detailsarea);
-      } else if (association == 'audio') {
+        } else if (association == 'audio') {
             $('<div>').addClass('preview centerable').append($('<audio>').prop('controls', true).prop('autoplay', true).prop('src', url)).appendTo(this._.detailsarea);
         } else {
             $('<div>').addClass('preview').addClass('downloadexplain centerable centertext').text("Click Download below to download file. Locker self-destructs 24 hours after creation.").appendTo(this._.detailsarea);
@@ -344,7 +315,6 @@ upload.modules.addmodule({
         this._.filename.show();
         this._.btns.show();
     },
-
     closepaste: function() {
       this._.dlarea.show()
     },
@@ -352,11 +322,10 @@ upload.modules.addmodule({
       this._.dlarea.hide()
       upload.textpaste.render(this._.view, this._.text.header.name, this._.text.data, this._.text.header.mime, this.closepaste.bind(this))
     },
-
     progress: function (e) {
         if (!this._.content || !this._.content.loading) {
             return;
-_        }
+        }
         switch(e) {
             case 'decrypting':
                 this._.content.loading.text('Decrypting Locker...');
@@ -368,14 +337,12 @@ _        }
             case 'waiting_for_password':
                  this._.content.loading.text('Locker is protected. Please enter password.');
                  break;
-            // --- NEW: Cases for face auth ---
             case 'waiting_for_face':
                  this._.content.loading.text('Locker is protected. Please verify your face.');
                  break;
             case 'verifying_face':
                  this._.content.loading.text('Verifying face...');
                  break;
-            // --- END NEW ---
             case 'cancelled':
                  this._.content.loading.text('Decryption cancelled by user.');
                  this._.newupload.show();
