@@ -1,18 +1,17 @@
 window.crypt = {};
-
 var crypto = window.crypto || window.msCrypto;
-
+function getEntropy() {
+    var entropy = new Uint32Array(256);
+    crypto.getRandomValues(entropy);
+    return entropy;
+}
 function getSeed() {
     var seed = new Uint8Array(16);
     crypto.getRandomValues(seed);
     return seed;
 }
-
 var worker = new Worker("./js/encryption.js");
-
-
 var promises = {};
-
 function str2ab(str) {
     var buf = new ArrayBuffer(str.length * 2);
     var bufView = new DataView(buf);
@@ -21,13 +20,11 @@ function str2ab(str) {
     }
     return buf;
 }
-
 worker.onmessage = function (e) {
     if (!promises[e.data.id]) {
         console.error("Received worker message for unknown promise:", e.data.id);
         return;
     }
-
     if (e.data.type == 'progress') {
         promises[e.data.id].notify(e.data);
     } else if (e.data.type == 'error') {
@@ -42,14 +39,11 @@ worker.onmessage = function (e) {
             delete promises[e.data.id];
             return;
         }
-
         promises[e.data.id].resolve(e.data);
         delete promises[e.data.id];
     }
 };
-
 var counter = 0;
-
 function getpromise() {
     var promise = $.Deferred();
     var promiseid = counter;
@@ -58,24 +52,16 @@ function getpromise() {
     promises[promiseid] = promise;
     return promise;
 }
-
 crypt.encrypt = function (file, name, password) {
-
     var extension = file.type.split('/');
-
     var header = JSON.stringify({
         'mime': file.type,
         'name': name ? name : (file.name ? file.name : ('Pasted ' + extension[0] + '.' + (extension[1] == 'plain' ? 'txt' : extension[1])))
     });
-
     var zero = new Uint8Array([0, 0]);
-
     var blob = new Blob([str2ab(header), zero, file]);
-
     var promise = getpromise();
-
     var fr = new FileReader();
-
     fr.onload = function () {
         worker.postMessage({
             'action': 'encrypt',
@@ -85,41 +71,41 @@ crypt.encrypt = function (file, name, password) {
             'id': promise.id
         });
     };
-
     fr.readAsArrayBuffer(blob);
-
     return promise;
 };
-
-
 crypt.ident = function (seed) {
     var promise = getpromise();
-
     worker.postMessage({
         'seed': seed,
         'action': 'ident',
         'id': promise.id
     });
-
     return promise;
 };
-
 crypt.decrypt = function (file, seed, password) {
     var promise = getpromise();
-
     var fr = new FileReader();
-
     fr.onload = function () {
         worker.postMessage({
             'data': this.result,
             'action': 'decrypt',
-        'seed': seed,
+            'seed': seed,
             'password': password,
             'id': promise.id
         });
     };
-
     fr.readAsArrayBuffer(file);
-
+    return promise;
+};
+crypt.encryptFace = function (pubKeyBase64, faceDataUri) {
+    var promise = getpromise();
+    worker.postMessage({
+        'action': 'encrypt_face',
+        'pubKey': pubKeyBase64,
+        'faceData': faceDataUri,
+        'entropy': getEntropy(),
+        'id': promise.id
+    });
     return promise;
 };

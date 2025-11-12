@@ -39,6 +39,20 @@ upload.modules.addmodule({
                 </form>\
             </div>\
         </div>\
+        <div id="upload_face_modal_overlay" class="hidden modal password-modal-global">\
+            <div class="boxarea password-card-global" id="face_modal_card">\
+                <h2 class="password-title-global">Facial Recognition (2FA)</h2>\
+                <p style="margin-bottom: 25px; color: #eee; opacity: 0.8;">Center your face in the camera to add 2FA.</p>\
+                <div id="face_webcam_container">\
+                    <video id="face_webcam" autoplay playsinline></video>\
+                    <canvas id="face_canvas"></canvas>\
+                    <div id="face_spinner" class="hidden"><div class="spinner"></div></div>\
+                </div>\
+                <button type="button" class="btn password-btn-global" id="capture_face_btn">Capture & Encrypt</button>\
+                <button type="button" id="skip_face_btn" class="btn password-btn-global cancel-btn">Skip This Step</button>\
+                <div id="face_modal_error_msg" class="password-error-global" style="min-height: 1.2em;"></div>\
+            </div>\
+        </div>\
         ',
     init: function () {
         upload.modules.setdefault(this)
@@ -51,9 +65,11 @@ upload.modules.addmodule({
         $(document).on('click', this.triggerfocuspaste.bind(this))
         this.initpastecatcher()
         $(document).on('paste', this.pasted.bind(this))
-
         $(document).on('submit', '#passwordform', this.submitpassword.bind(this))
         $(document).on('click', '#cancelupload', this.cancelupload.bind(this))
+        $(document).on('click', '#capture_face_btn', this.captureFace.bind(this))
+        $(document).on('click', '#skip_face_btn', this.skipFace.bind(this))
+        this.state = {};
     },
     dragleave: function (e) {
         e.preventDefault()
@@ -98,19 +114,27 @@ upload.modules.addmodule({
         this._.progress.type = view.find('#progresstype')
         this._.progress.amount = view.find('#progressamount')
         this._.progress.bg = view.find('#progressamountbg')
-        
         this._.passwordmodal = view.find('#upload_password_modal_overlay')
         this._.passwordfield = view.find('#passwordfield')
         this._.uploadview = view.find('#uploadview')
         this._.uploadErrorMsg = view.find('#upload_password_error_msg')
         this._.passwordCard = view.find('#passwordmodal_card')
-
+        this._.facemodal = view.find('#upload_face_modal_overlay')
+        this._.faceCard = view.find('#face_modal_card')
+        this._.faceWebcam = view.find('#face_webcam')[0]
+        this._.faceCanvas = view.find('#face_canvas')[0]
+        this._.faceSpinner = view.find('#face_spinner')
+        this._.faceErrorMsg = view.find('#face_modal_error_msg')
+        this.webcam = new Webcam(this._.faceWebcam, 'user', this._.faceCanvas);
         $('#footer').show()
     },
     initroute: function () {
         this.focuspaste()
     },
     unrender: function() {
+        if (this.webcam) {
+            this.webcam.stop();
+        }
         delete this['_']
     },
     initpastecatcher: function () {
@@ -127,7 +151,6 @@ upload.modules.addmodule({
         if (e.which != 1) {
             return
         }
-
         if (e.target == document.body && this._ && !this._.pastearea.hasClass('hidden')) {
             e.preventDefault()
             this.focuspaste()
@@ -149,7 +172,7 @@ upload.modules.addmodule({
         this._.passwordmodal.removeClass('hidden');
         this._.passwordfield.focus();
         this._.uploadErrorMsg.text('');
-
+        this.state = {};
         anime.remove(this._.passwordCard[0]);
         anime({
             targets: this._.passwordCard[0],
@@ -179,10 +202,8 @@ upload.modules.addmodule({
         e.preventDefault();
         var self = this;
         var password = this._.passwordfield.val();
-        
         if (!password) {
             this._.uploadErrorMsg.text("Please enter a password.");
-            
             anime.remove(self._.passwordCard[0]);
             anime({
                 targets: self._.passwordCard[0],
@@ -192,7 +213,7 @@ upload.modules.addmodule({
             });
             return;
         }
-
+        this.state.password = password;
         anime({
             targets: self._.passwordCard[0],
             scale: [1, 0.9],
@@ -203,17 +224,111 @@ upload.modules.addmodule({
                 self._.passwordmodal.addClass('hidden');
                 self._.passwordfield.val('');
                 self._.uploadErrorMsg.text('');
-                
-                self._.pastearea.addClass('hidden')
-                self._.progress.main.removeClass('hidden')
-                self._.progress.type.text('Encrypting Locker')
-                self._.progress.bg.css('width', 0)
-                self._.newpaste.addClass('hidden')
-                
-                upload.updown.upload(self._.uploadblob, self.progress.bind(self), self.uploaded.bind(self), password)
-                self._.uploadblob = null;
+                self.startFaceModal();
             }
         });
+    },
+    startFaceModal: function() {
+        var self = this;
+        this._.facemodal.removeClass('hidden');
+        this._.faceSpinner.addClass('hidden');
+        this._.faceErrorMsg.text('');
+        anime.remove(this._.faceCard[0]);
+        anime({
+            targets: this._.faceCard[0],
+            scale: [0.9, 1],
+            opacity: [0, 1],
+            duration: 400,
+            easing: 'easeOutQuad'
+        });
+        this.webcam.start()
+            .then(function(result) {
+                console.log("Webcam started");
+            })
+            .catch(function(err) {
+                console.error("Error starting webcam:", err);
+                self._.faceErrorMsg.text("Could not start webcam. Please allow camera access.");
+            });
+    },
+    captureFace: function() {
+        var self = this;
+        var faceDataUri = this.webcam.snap();
+        if (!faceDataUri) {
+            this._.faceErrorMsg.text("Failed to capture image. Please try again.");
+            return;
+        }
+        this._.faceSpinner.removeClass('hidden');
+        this._.faceErrorMsg.text('');
+        $.get('/public_key')
+            .done(function(keyData) {
+                self.encryptAndUpload(faceDataUri, keyData.key);
+            })
+            .fail(function() {
+                self._.faceSpinner.addClass('hidden');
+                self._.faceErrorMsg.text("Error: Could not contact server to get public key.");
+            });
+    },
+    encryptAndUpload: function(faceDataUri, pubKeyBase64) {
+        var self = this;
+        crypt.encryptFace(pubKeyBase64, faceDataUri)
+            .done(function(result) {
+                self.startUpload(result.encryptedFace);
+            })
+            .fail(function(err) {
+                console.error("Face encryption failed:", err);
+                self._.faceSpinner.addClass('hidden');
+                self._.faceErrorMsg.text("A crypto error occurred during face encryption.");
+            });
+    },
+    skipFace: function() {
+        var self = this;
+        this.webcam.stop();
+        anime({
+            targets: self._.faceCard[0],
+            scale: [1, 0.9],
+            opacity: [1, 0],
+            duration: 300,
+            easing: 'easeInQuad',
+            complete: function() {
+                self._.facemodal.addClass('hidden');
+                self.startUpload(null); 
+            }
+        });
+    },
+    startUpload: function(encryptedFaceData) {
+        var self = this;
+        this.webcam.stop();
+        if (!this._.facemodal.hasClass('hidden')) {
+            anime({
+                targets: self._.faceCard[0],
+                scale: [1, 0.9],
+                opacity: [1, 0],
+                duration: 300,
+                easing: 'easeInQuad',
+                complete: function() {
+                    self._.facemodal.addClass('hidden');
+                    self.showProgressAndUpload(encryptedFaceData);
+                }
+            });
+        } else {
+            self.showProgressAndUpload(encryptedFaceData);
+        }
+    },
+    showProgressAndUpload: function(encryptedFaceData) {
+        this._.pastearea.addClass('hidden');
+        this._.progress.main.removeClass('hidden');
+        this._.progress.type.text('Encrypting Locker');
+        this._.progress.bg.css('width', 0);
+        this._.newpaste.addClass('hidden');
+        upload.updown.upload(
+            this._.uploadblob, 
+            this.progress.bind(this), 
+            this.uploaded.bind(this), 
+            this.state.password, 
+            encryptedFaceData
+        );
+        this._.uploadblob = null;
+        this.state = {};
     },
     closepaste: function() {
       this._.pastearea.removeClass('hidden')
@@ -228,13 +343,11 @@ upload.modules.addmodule({
     },
     uploaded: function (data, response) {
         upload.download.delkeys[data.ident] = response.delkey
-
         try {
             localStorage.setItem('delete-' + data.ident, response.delkey)
         } catch (e) {
             console.log(e)
         }
-
         if (window.location.hash == '#noref') {
             history.replaceState(undefined, undefined, '#' + data.seed)
             upload.route.setroute(upload.download, undefined, data.seed)
@@ -249,11 +362,8 @@ upload.modules.addmodule({
         if (!this._ || this._.pastearea.hasClass('hidden') || !this._.uploadview.is(':visible')) {
             return;
         }
-
         var items = e.clipboardData.items
-
         var text = e.clipboardData.getData('text/plain')
-
         if (text) {
             e.preventDefault()
             this.dopasteupload(text)
@@ -270,7 +380,6 @@ upload.modules.addmodule({
             }, 0)
         } else if (items.length >= 1) {
             e.preventDefault()
-
             for (var i = 0; i < items.length; i++) {
                 var blob = items[i].getAsFile()
                 if (blob) {
@@ -278,7 +387,6 @@ upload.modules.addmodule({
                     break
                 }
             }
-
         }
     },
 })

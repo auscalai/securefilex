@@ -1,7 +1,10 @@
 importScripts('../deps/sjcl.min.js');
-// PBKDF2 needs hmac
 importScripts('../deps/hmac.js');
 importScripts('../deps/pbkdf2.js');
+importScripts('../deps/codecHex.js');
+importScripts('../deps/bn.js');
+importScripts('../deps/ecc.js');
+importScripts('../deps/convenience.js');
 
 function parametersfrombits(seed) {
     var out = sjcl.hash.sha512.hash(seed);
@@ -25,15 +28,12 @@ function parameters(seed) {
 function encrypt(file, seed, id, password) {
     var params = parameters(seed);
     var aes_key = sjcl.misc.pbkdf2(password, params.seed, 1000, 256);
-
     var uarr = new Uint8Array(file);
     var before = sjcl.codec.bytes.toBits(uarr);
     var prp = new sjcl.cipher.aes(aes_key);
     var after = sjcl.mode.ccm.encrypt(prp, before, params.iv);
     var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
-
     var encryptedBlob = new Blob([afterarray], { type: 'application/octet-stream' });
-
     postMessage({
         'id': id,
         'type': 'encrypt_result',
@@ -50,9 +50,7 @@ var fileheader = [
 function decrypt(file, seed, id, password) {
     var params = parameters(seed);
     var aes_key = sjcl.misc.pbkdf2(password, params.seed, 1000, 256);
-
     var uarr = new Uint8Array(file);
-
     var hasheader = true;
     for (var i = 0; i < fileheader.length; i++) {
         if (uarr[i] != fileheader[i]) {
@@ -63,14 +61,10 @@ function decrypt(file, seed, id, password) {
     if (hasheader) {
         uarr = uarr.subarray(fileheader.length);
     }
-
     var before = sjcl.codec.bytes.toBits(uarr);
     var prp = new sjcl.cipher.aes(aes_key);
-    
     var after = sjcl.mode.ccm.decrypt(prp, before, params.iv);
-    
     var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
-
     var header = '';
     var headerview = new DataView(afterarray.buffer);
     var i = 0;
@@ -82,7 +76,6 @@ function decrypt(file, seed, id, password) {
         header += String.fromCharCode(num);
     }
     var headerData = JSON.parse(header);
-
     var data = new Blob([afterarray]);
     postMessage({
         'id': id,
@@ -102,6 +95,27 @@ function ident(seed, id) {
     });
 }
 
+function encrypt_face(pubKeyBase64, faceDataUri, id) {
+    var pubKeyPoint = sjcl.codec.base64.toBits(pubKeyBase64);
+    var pubKey = new sjcl.ecc.elGamal.publicKey(
+        sjcl.ecc.curves.c256,
+        pubKeyPoint
+    );
+    var encryptedFaceJson = sjcl.encrypt(pubKey, faceDataUri, {
+        adata: "",
+        iv: sjcl.random.randomWords(4),
+        iter: 1000,
+        ks: 256,
+        ts: 128,
+        v: 1
+    });
+    postMessage({
+        'id': id,
+        'type': 'encrypt_face_result',
+        'encryptedFace': encryptedFaceJson
+    });
+}
+
 function onprogress(id, progress) {
     postMessage({
         'id': id,
@@ -113,9 +127,11 @@ function onprogress(id, progress) {
 }
 
 onmessage = function (e) {
+    if (e.data.entropy) {
+        sjcl.random.addEntropy(e.data.entropy, 1024, "crypto.getRandomValues");
+    }
     var progress = onprogress.bind(undefined, e.data.id);
     sjcl.mode.ccm.listenProgress(progress);
-
     try {
         if (e.data.action == 'decrypt') {
             decrypt(e.data.data, e.data.seed, e.data.id, e.data.password);
@@ -123,6 +139,8 @@ onmessage = function (e) {
             ident(e.data.seed, e.data.id);
         } else if (e.data.action == 'encrypt') {
             encrypt(e.data.data, e.data.seed, e.data.id, e.data.password);
+        } else if (e.data.action == 'encrypt_face') {
+            encrypt_face(e.data.pubKey, e.data.faceData, e.data.id);
         } else {
             postMessage({
                 'id': e.data.id,
@@ -137,6 +155,5 @@ onmessage = function (e) {
             'message': error.message || 'Encryption/Decryption Failed'
         });
     }
-
     sjcl.mode.ccm.unListenProgress(progress);
 };

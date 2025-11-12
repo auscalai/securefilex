@@ -4,18 +4,15 @@
     font-weight: 400;
     src: local('Ubuntu'), url(./fonts/ubuntu-regular-webfont.woff) format('woff');
 }
-
 #btnarea {
     bottom: 5px;
     position: fixed;
     z-index: 1;
     width: 100%;
 }
-
 #btnarea .right {
     margin-right: 5px;
 }
-
 #create_filename {
     background-color: rgba(0,0,0,.5);
     border: 1px solid #FFF;
@@ -35,7 +32,6 @@
     width: 170px;
     z-index: 1;
 }
-
 #downloaded_filename {
     background-color: rgba(0,0,0,.5);
     border-radius: 5px;
@@ -54,11 +50,9 @@
     white-space: nowrap;
     z-index: 1;
 }
-
 #finallink,#downloadprogress {
     color: #FFF;
 }
-
 #create_linenos {
     color: #C5C8C6;
     float: left;
@@ -71,17 +65,14 @@
     width: 30px;
     z-index: -1;
 }
-
 .line {
     word-wrap: normal;
     white-space: pre-wrap;
     min-height: 1em;
 }
-
 .line:after {
         content: "";
 }
-
 .line .linenum {
     -webkit-user-select: none;
     -moz-user-select: none;
@@ -96,29 +87,24 @@
     text-align: right;
     width: 30px;
 }
-
 #module_download .preview {
     display: block;
     margin: 0 auto;
     max-height: 100%;
     max-width: 100%;
 }
-
 #module_download,#downloaddetails {
     height: 100%;
     position: absolute;
     top: 0;
     width: 100%;
 }
-
 #pastearea {
     cursor: pointer;
 }
-
 #pastearea.dragover {
     background-color: rgba(255,255,255,.2);
 }
-
 #pastearea:hover {
     -moz-transition: background-color 100ms ease-in;
     -ms-transition: background-color 100ms ease-in;
@@ -127,7 +113,6 @@
     background-color: #102136;
     transition: background-color 100ms ease-in;
 }
-
 #pastecatcher {
     height: 0;
     left: 0;
@@ -137,22 +122,18 @@
     top: 0;
     width: 0;
 }
-
 #previewimg {
     max-height: 100%;
     max-width: 100%;
 }
-
 #previewimg img, .preview video, .preview audio {
     display: block;
     margin: 0 auto;
 }
-
 #previewimg img:not(.dragged), .preview audio, .preview video {
     max-height: 100vh;
     max-width: 100vw;
 }
-
 #progressamountbg {
     background-color: rgba(0,10,0,.5);
     height: 100%;
@@ -162,13 +143,11 @@
     width: 0;
     z-index: -1;
 }
-
 #uploadview .centerview {
     display: table;
     height: 100%;
     width: 100%;
 }
-
 .boxarea {
     -moz-transition: background-color 400ms ease-out;
     -ms-transition: background-color 400ms ease-out;
@@ -176,7 +155,6 @@
     -webkit-transition: background-color 400ms ease-out;
     transition: background-color 400ms ease-out;
 }
-
 .btn {
     -webkit-box-align: start;
     background-color: rgba(0,0,0,.5);
@@ -197,13 +175,11 @@
     vertical-align: middle;
     white-space: nowrap;
 }
-
 .btn:hover {
     background-color: #102136;
     opacity: 1;
     transition: all 100ms ease-in;
 }
-
 .contentarea {
     border: 2px solid #FFF;
     bottom: 0;
@@ -218,26 +194,21 @@
     vertical-align: middle;
     width: 200px;
 }
-
 .contentarea .boxarea {
     display: table-cell;
     text-align: center;
     vertical-align: middle;
 }
-
 .contentarea h1 {
     margin: 0;
 }
-
 .downloadexplain {
     color: #fff;
     font-size: 30px;
 }
-
 .dragresize.dragging {
     cursor: nwse-resize;
 }
-
 .footer {
     bottom: 10px;
     margin: auto;
@@ -246,30 +217,25 @@
     width: 100%;
     color: #FFF;
 }
-
 .footer a {
     color: #FFF;
     font-size: 13px;
     opacity: .5;
     text-decoration: none;
 }
-
 .hidden {
     display: none!important;
 }
-
 .loadingtext {
     color: #FFF;
     text-align: center;
 }
-
 .noscript {
     color: #FFF;
     margin: 0;
     text-align: center;
     vertical-align: middle;
 }
-
 .previewtext {
     height: calc(100% - 110px);
     overflow: auto;
@@ -277,7 +243,6 @@
     top: 55px;
     width: 100%;
 }
-
 .previewtext > textarea {
     background: transparent none repeat scroll 0 0;
     border: 0 none;
@@ -293,19 +258,15 @@
     resize: none;
     width: 100%;
 }
-
 .previewtext code {
     background: none;
     margin: 0;
     overflow: visible;
 }
-
 .previewtext pre {
     margin: 0;
-
     padding-left: 50px;
 }
-
 .topbar {
     box-sizing: border-box;
     display: flex;
@@ -315,12 +276,10 @@
     width: 100%;
     z-index: 1;
 }
-
 .viewcontent {
     height: 100%;
     width: 100%;
 }
-
 .viewswitcher {
     -webkit-flex-shrink: 0;
     display: flex;
@@ -329,11 +288,9 @@
     vertical-align: top;
     white-space: nowrap;
 }
-
 .centertext {
     text-align: center;
 }
-
 .centerable {
     -webkit-transform: translateY(-50%);
     margin: 0 auto;
@@ -341,12 +298,10 @@
     top: 50%;
     transform: translateY(-50%);
 }
-
 body {
     background-color: #1d1f21;
     overflow: auto;
 }
-
 body,html {
     font-family: "Ubuntu", "Lucida Sans Unicode", "Lucida Grande", "Arial", sans-serif;
     height: 100%;
@@ -354,117 +309,95 @@ body,html {
     overflow: auto;
     padding: 0;
 }
-
 .right {
     float: right;
 }
-
 #create_linenos {
 color: #fff;
 }
-
 .previewtext > textarea, .preview .previewtext, #downloaded_text {
 background: rgba(33,62,109,.6);
 color: #eee;
 font-size: 1.3em;
 }
-
 #downloaded_text .line {
 font-size: 1.3em;
 line-height: 1.6em;
 color: #eee;
 }
-
-
 #downloaded_text .linenum {
 font-size: .6em;
 line-spacing: 4px;
 color: #37BBFF;
 }
-
 #create_filename {
 color: #FF7237;
 text-align: center;
 font-size: 1.1em;
 font-weight: 500;
 }
-
 #downloaded_filename {
 color: #FF7237;
 }
-
 #editpaste.btn {
 color: #37BBFF;
 font-weight: 500;
 border: 2px solid #37BBFF;
 }
-
 #newupload.btn {
 color: #5EFF7F;
 font-weight: 500;
 border: 2px solid #5EFF7F;
 }
-
 #dlbtn.btn {
 color: #5EFF7F;
 font-weight: 500;
 border: 2px solid #5EFF7F;
 }
-
 #newpaste.btn {
 color: #5EFF7F;
 font-weight: 500;
 border: 2px solid #5EFF7F;
 }
-
 #newpaste.btn {
 color: #5EFF7F;
 font-weight: 500;
 border: 2px solid #5EFF7F;
 }
-
 #inbrowserbtn.btn {
 color: #37BBFF;
 font-weight: 500;
 border: 2px solid #37BBFF;
 }
-
 #deletebtn.btn {
 color: #FF7237;
 font-weight: 500;
 border: 2px solid #FF7237;
 }
-
 .viewswitcher button.btn {
 color: #5EFF7F;
 font-weight: 500;
 border: 2px solid #5EFF7F;
 }
-
 #retbtn.btn {
 color: #37BBFF;
 font-weight: 500;
 border: 2px solid #37BBFF;
 }
-
 #downloadprogress {
 color: #FF7237;
 }
-
 #uploadview {
 border: 2px dashed #FF7237;
 }
-
 #uploadview, #pastearea.boxarea, #pastearea.boxarea h2 {
 color: #FF7237;
 font-weight: 500;
 }
-
 #pastearea.boxarea h3 {
 color: #FF7237;
 font-weight: 500;
 }
-
 .password-input-global,
 #passwordmodal input[type="password"] {
     width: 100%;
@@ -478,14 +411,11 @@ font-weight: 500;
     box-sizing: border-box;
     transition: all 0.2s ease-in-out;
 }
-
 .password-input-global:focus,
 #passwordmodal input[type="password"]:focus {
     border-color: #5EFF7F;
     box-shadow: 0 0 10px rgba(94, 255, 127, 0.5);
 }
-
-
 .password-btn-global,
 #passwordmodal button {
     display: block; 
@@ -497,7 +427,6 @@ font-weight: 500;
     box-sizing: border-box;
     transition: all 0.2s ease-in-out;
 }
-
 #upload_submit_btn {
     color: #5EFF7F;
     border-color: #5EFF7F;
@@ -507,7 +436,6 @@ font-weight: 500;
     color: #021327;
     box-shadow: 0 0 10px rgba(94, 255, 127, 0.5);
 }
-
 .cancel-btn {
     color: #FF7237;
     border-color: #FF7237;
@@ -519,7 +447,6 @@ font-weight: 500;
     color: #021327;
     box-shadow: 0 0 10px rgba(255, 114, 55, 0.5);
 }
-
 .password-modal-global {
     position: fixed;
     top: 0;
@@ -532,7 +459,6 @@ font-weight: 500;
     justify-content: center;
     align-items: center;
 }
-
 .password-card-global {
     padding: 30px;
     background-color: #021327;
@@ -544,25 +470,66 @@ font-weight: 500;
     color: #fff;
     border: 1px solid #37BBFF;
 }
-
 .password-title-global {
     margin-bottom: 20px;
     color: #fff;
 }
-
 .password-btn-global:not(.cancel-btn) {
     color: #5EFF7F;
     border-color: #5EFF7F;
 }
-
 .password-btn-global:not(.cancel-btn):hover {
     background-color: #5EFF7F;
     color: #021327;
     box-shadow: 0 0 10px rgba(94, 255, 127, 0.5);
 }
-
 .password-error-global {
     color: #f87171;
     margin-top: 15px;
     font-size: 14px;
+}
+#face_modal_card {
+    max-width: 540px;
+}
+#face_webcam_container {
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto 20px;
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #37BBFF;
+    background-color: #0a192f;
+}
+#face_webcam {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+#face_canvas {
+    display: none;
+}
+#face_spinner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(2, 19, 39, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+}
+.spinner {
+    border: 5px solid rgba(55, 187, 255, 0.2);
+    border-radius: 50%;
+    border-top: 5px solid #37BBFF;
+    width: 50px;
+    height: 50px;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
