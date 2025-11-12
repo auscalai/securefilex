@@ -1,3 +1,0 @@
-cd ..
-
-npm start
