@@ -1,5 +1,5 @@
 var crypto = require('crypto');
-var fs = require('fs');
+var fs = require('fs'); // <-- This was the typo
 var path = require('path');
 var vm = require('vm');
 
@@ -397,7 +397,7 @@ function create_app(config) {
                 let userError = "Verification failed. Please try again.";
                 
                 // Check for the specific spoofing error text
-                if (body.error.includes("Spoof detected in given image.")) {
+                if (body.error.includes("Spoof detected in given image")) {
                     userError = "Spoof detected. Please use a live, genuine face.";
                 } else if (body.error.includes("Face could not be detected")) {
                     userError = "Face could not be detected. Please try again.";
@@ -413,12 +413,10 @@ function create_app(config) {
                 const fileStream = fs.createReadStream(filePath, { start: 0, end: mainFileEnd - 1 });
                 res.setHeader('Content-Type', 'application/octet-stream');
                 fileStream.pipe(res);
-                console.log(body.verified);
             } 
             // Case 2: Not verified (no match)
             else {
                 console.log("DeepFace verification failed (no match):", body);
-                console.log(body.verified);
                 res.status(403).json({ verified: false, error: "Face does not match." });
             }
         } catch (e) {

@@ -168,19 +168,28 @@ upload.modules.addmodule({
                 .then(function(response) {
                     if (response.ok) {
                         // SUCCESS (HTTP 200-299)
-                        // The server is streaming the file blob.
                         return response.blob();
                     } else {
                         // FAILURE (HTTP 4xx, 5xx)
-                        // The server sent a JSON error. Read it as JSON.
-                        return response.json().then(function(errorJson) {
-                            // Throw an error to be caught by the .catch() block
-                            var err = new Error(errorJson.error || 'Verification failed');
-                            err.data = errorJson;
+                        // Manually get the text, then try to parse it.
+                        return response.text().then(function(text) {
+                            var errorMsg = 'Face verification failed. Server returned ' + response.status;
+                            try {
+                                // Try to parse the text as JSON
+                                var errorJson = JSON.parse(text);
+                                if (errorJson && errorJson.error) {
+                                    errorMsg = errorJson.error; // SUCCESS! Get the descriptive error.
+                                }
+                            } catch (e) {
+                                // JSON parsing failed, just use the text body if it's not HTML
+                                if (text && text.trim().charAt(0) !== '<') {
+                                    errorMsg = text; // Use the raw text if it's not HTML
+                                }
+                                console.error("Failed to parse error JSON, using fallback.");
+                            }
+                            var err = new Error(errorMsg);
+                            err.data = { status: response.status, body: text };
                             throw err;
-                        }).catch(function() {
-                            // Fallback if JSON parsing fails
-                            throw new Error('Face verification failed. Server returned ' + response.status);
                         });
                     }
                 })
@@ -210,7 +219,7 @@ upload.modules.addmodule({
         // Start the verification loop for the first time
         attemptVerification(null);
     },
-    
+
     upload: function (blob, progress, done, password, encryptedFace) {
         crypt.encrypt(blob, blob.name, password)
             .done(this.encrypted.bind(this, progress, done, encryptedFace))
