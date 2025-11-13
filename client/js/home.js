@@ -92,16 +92,13 @@ upload.modules.addmodule({
         $(document).on('submit', '#passwordform', this.submitpassword.bind(this))
         $(document).on('click', '#cancelupload', this.cancelupload.bind(this))
         
-        // 2FA choice handlers
         $(document).on('click', '#choose_face_btn', this.chooseFace.bind(this))
         $(document).on('click', '#choose_totp_btn', this.chooseTOTP.bind(this))
         $(document).on('click', '#skip_2fa_btn', this.skip2FA.bind(this))
         
-        // Face handlers
         $(document).on('click', '#capture_face_btn', this.captureFace.bind(this))
         $(document).on('click', '#back_from_face_btn', this.backFrom2FA.bind(this))
         
-        // TOTP handlers
         $(document).on('click', '#verify_totp_btn', this.verifyTOTP.bind(this))
         $(document).on('click', '#back_from_totp_btn', this.backFrom2FA.bind(this))
         $(document).on('input', '#totp_verify_input', this.formatTOTPInput.bind(this))
@@ -152,18 +149,15 @@ upload.modules.addmodule({
         this._.progress.amount = view.find('#progressamount')
         this._.progress.bg = view.find('#progressamountbg')
         
-        // Password modal
         this._.passwordmodal = view.find('#upload_password_modal_overlay')
         this._.passwordfield = view.find('#passwordfield')
         this._.uploadview = view.find('#uploadview')
         this._.uploadErrorMsg = view.find('#upload_password_error_msg')
         this._.passwordCard = view.find('#passwordmodal_card')
         
-        // 2FA choice modal
         this._.twofaChoiceModal = view.find('#twofa_choice_modal_overlay')
         this._.twofaChoiceCard = view.find('#twofa_choice_card')
         
-        // Face modal
         this._.facemodal = view.find('#upload_face_modal_overlay')
         this._.faceCard = view.find('#face_modal_card')
         this._.faceWebcam = view.find('#face_webcam')[0]
@@ -171,7 +165,6 @@ upload.modules.addmodule({
         this._.faceSpinner = view.find('#face_spinner')
         this._.faceErrorMsg = view.find('#face_modal_error_msg')
         
-        // TOTP modal
         this._.totpmodal = view.find('#upload_totp_modal_overlay')
         this._.totpCard = view.find('#totp_modal_card')
         this._.totpQRContainer = view.find('#totp_qr_code')
@@ -332,13 +325,12 @@ upload.modules.addmodule({
             easing: 'easeInQuad',
             complete: function() {
                 self._.twofaChoiceModal.addClass('hidden');
-                self.startUpload(null); // No 2FA data
+                self.startUpload(null); 
             }
         });
     },
     backFrom2FA: function() {
         var self = this;
-        // Close whichever modal is open
         if (!this._.facemodal.hasClass('hidden')) {
             this.webcam.stop();
             anime({
@@ -432,7 +424,6 @@ upload.modules.addmodule({
             easing: 'easeOutQuad'
         });
         
-        // Generate TOTP secret and QR code
         $.get('/generate_totp')
             .done(function(response) {
                 self.state.totpSecret = response.secret;
@@ -444,7 +435,6 @@ upload.modules.addmodule({
             });
     },
     formatTOTPInput: function(e) {
-        // Only allow digits
         var value = e.target.value.replace(/\D/g, '');
         this._.totpVerifyInput.val(value);
     },
@@ -466,7 +456,6 @@ upload.modules.addmodule({
         
         this._.totpErrorMsg.text('Verifying...');
         
-        // Verify the TOTP code
          $.ajax({
             type: 'POST',
             url: '/verify_totp_setup',
@@ -477,9 +466,7 @@ upload.modules.addmodule({
             contentType: 'application/json; charset=utf-8',
             dataType: 'json',
             success: function(response) {
-                // This block runs for 2xx responses
                 if (response.valid) {
-                    // Get public key and encrypt TOTP secret
                     $.get('/public_key')
                         .done(function(keyData) {
                             self.encryptTOTPAndUpload(self.state.totpSecret, keyData.key);
@@ -488,8 +475,6 @@ upload.modules.addmodule({
                             self._.totpErrorMsg.text("Error: Could not contact server to get public key.");
                         });
                 } else {
-                    // This case may not be hit if the server sends a 400 for invalid codes,
-                    // but it's here for safety.
                     self._.totpErrorMsg.text("Invalid code. Please try again.");
                     anime.remove(self._.totpCard[0]);
                     anime({
@@ -501,16 +486,13 @@ upload.modules.addmodule({
                 }
             },
             error: function(xhr) {
-                // This block runs for 4xx/5xx responses (like the 400 Bad Request you were getting)
                 var errorMessage = "Verification failed. Please try again.";
                 try {
-                    // Try to parse the specific error message from the server response
                     var errorResponse = JSON.parse(xhr.responseText);
                     if (errorResponse && errorResponse.error) {
-                        errorMessage = errorResponse.error; // e.g., "Invalid code."
+                        errorMessage = errorResponse.error; 
                     }
                 } catch (e) {
-                    // Could not parse the error, use the generic message
                 }
                 self._.totpErrorMsg.text(errorMessage);
                 anime.remove(self._.totpCard[0]);
@@ -537,12 +519,10 @@ upload.modules.addmodule({
     startUpload: function(twoFAData) {
         var self = this;
         
-        // Stop webcam if it's running
         if (this.webcam) {
             this.webcam.stop();
         }
         
-        // Close any open modals
         var closeModal = function() {
             self.showProgressAndUpload(twoFAData);
         };

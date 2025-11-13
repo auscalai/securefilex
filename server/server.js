@@ -3,7 +3,6 @@ var fs = require('fs');
 var path = require('path');
 var vm = require('vm');
 
-// Load SJCL for ECC encryption/decryption
 try {
     const sjclPath = require.resolve('sjcl');
     const sjclFileContent = fs.readFileSync(sjclPath, 'utf8');
@@ -24,27 +23,22 @@ var http = require('http');
 var https = require('https');
 var request = require('request');
 var tmp = require('tmp');
-var speakeasy = require('speakeasy'); // For TOTP
-var QRCode = require('qrcode'); // For QR code generation
-
-var UP1_HEADERS = {
-    v1: new Buffer.from("UP1\0", 'binary')
-}
+var speakeasy = require('speakeasy');
+var QRCode = require('qrcode');
 
 function handle_upload(req, res) {
     var config = req.app.locals.config
     var busboy = new Busboy({
         headers: req.headers,
-        limits: {
-            files: 1,
-            parts: 3
-        }
+        limits: { files: 1, parts: 3 }
     });
     var fields = {};
     var tmpfname = null;
+
     busboy.on('field', function(fieldname, value) {
         fields[fieldname] = value;
     });
+
     busboy.on('file', function(fieldname, file, filename) {
         if (fieldname !== 'file') {
             file.resume();
@@ -54,7 +48,7 @@ function handle_upload(req, res) {
             var ftmp = tmp.fileSync({ postfix: '.tmp', dir: req.app.locals.config.path.i, keep: true });
             tmpfname = ftmp.name;
             var fstream = fs.createWriteStream('', {fd: ftmp.fd, defaultEncoding: 'binary'});
-            fstream.write(UP1_HEADERS.v1, 'binary', () => file.pipe(fstream));
+            file.pipe(fstream);
         } catch (err) {
             console.error("Error creating temp file:", err);
             res.status(500).send("Internal Server Error");
@@ -62,6 +56,7 @@ function handle_upload(req, res) {
             res.close();
         }
     });
+
     busboy.on('finish', function() {
         try {
             if (!tmpfname) {
@@ -97,16 +92,15 @@ function handle_upload(req, res) {
 function handle_delete(req, res) {
     var config = req.app.locals.config
     if (!req.query.ident) {
-        res.status(400).json({error: "Ident not provided", code: 11});
-        return;
+        return res.status(400).json({error: "Ident not provided", code: 11});
     }
     if (!req.query.delkey) {
-        res.status(400).json({error: "Delete key not provided", code: 12});
-        return;
+        return res.status(400).json({error: "Delete key not provided", code: 12});
     }
     var delhmac = crypto.createHmac('sha256', config.delete_key)
                         .update(req.query.ident)
                         .digest('hex');
+
     if (req.query.ident.length !== 22) {
         res.status(400).json({error: "Ident length is incorrect", code: 3});
     } else if (delhmac !== req.query.delkey) {
@@ -146,18 +140,9 @@ function cf_do_invalidate(ident, mode, cfconfig) {
     var inv_url = mode + '://' + cfconfig.url + '/i/' + ident;
     request.post({
         url: 'https://www.cloudflare.com/api_json.html',
-        form: {
-            a: 'zone_file_purge',
-            tkn: cfconfig.token,
-            email: cfconfig.email,
-            z: cfconfig.domain,
-            url: inv_url
-        }
+        form: { a: 'zone_file_purge', tkn: cfconfig.token, email: cfconfig.email, z: cfconfig.domain, url: inv_url }
     }, function(err, response, body) {
-        if (err) {
-            console.warn("Cloudflare invalidation error:", err);
-            return;
-        }
+        if (err) { return console.warn("Cloudflare invalidation error:", err); }
         try {
             var result = JSON.parse(body)
             if (result.result === 'error') {
@@ -170,39 +155,23 @@ function cf_do_invalidate(ident, mode, cfconfig) {
 }
 
 function cf_invalidate(ident, config) {
-    if (!config['cloudflare-cache-invalidate']) {
-      return;
-    }
+    if (!config['cloudflare-cache-invalidate']) return;
     var cfconfig = config['cloudflare-cache-invalidate']
-    if (!cfconfig.enabled) {
-      return;
-    }
-    if (config.http.enabled)
-        cf_do_invalidate(ident, 'http', cfconfig);
-    if (config.https.enabled)
-        cf_do_invalidate(ident, 'https', cfconfig);
+    if (!cfconfig.enabled) return;
+    if (config.http.enabled) cf_do_invalidate(ident, 'http', cfconfig);
+    if (config.https.enabled) cf_do_invalidate(ident, 'https', cfconfig);
 }
 
 const keyPairPath = path.join(__dirname, 'ecc_keys.json');
 let eccKeyPair = null;
 
 function getECCKeys() {
-    if (eccKeyPair) {
-        return eccKeyPair;
-    }
+    if (eccKeyPair) return eccKeyPair;
     try {
         const keyData = fs.readFileSync(keyPairPath, 'utf8');
         const keys = JSON.parse(keyData);
-        const pub = new sjcl.ecc.elGamal.publicKey(
-            sjcl.ecc.curves.c256,
-            sjcl.codec.base64.toBits(keys.pub)
-        );
-        const secBits = sjcl.codec.hex.toBits(keys.sec);
-        const secBN = sjcl.bn.fromBits(secBits);
-        const sec = new sjcl.ecc.elGamal.secretKey(
-            sjcl.ecc.curves.c256,
-            secBN
-        );
+        const pub = new sjcl.ecc.elGamal.publicKey(sjcl.ecc.curves.c256, sjcl.codec.base64.toBits(keys.pub));
+        const sec = new sjcl.ecc.elGamal.secretKey(sjcl.ecc.curves.c256, sjcl.bn.fromBits(sjcl.codec.hex.toBits(keys.sec)));
         eccKeyPair = { pub: pub, sec: sec };
         console.log("ECC keys loaded successfully.");
         return eccKeyPair;
@@ -241,34 +210,22 @@ function create_app(config) {
         const keys = getECCKeys();
         const pubKeyPoint = keys.pub.get();
         const pubKeyBase64 = sjcl.codec.base64.fromBits(pubKeyPoint.x.concat(pubKeyPoint.y));
-        res.json({
-            curve: 'c256',
-            key: pubKeyBase64
-        });
+        res.json({ curve: 'c256', key: pubKeyBase64 });
     } catch (e) {
         console.error("Error getting public key:", e);
         res.status(500).json({ error: "Could not retrieve public key." });
     }
   });
 
-  // Generate TOTP secret and QR code
   app.get('/generate_totp', (req, res) => {
     try {
-        const secret = speakeasy.generateSecret({
-            name: 'SecureFile Locker',
-            length: 32
-        });
-        
-        // Generate QR code as data URI
+        const secret = speakeasy.generateSecret({ name: 'SecureFile Locker', length: 32 });
         QRCode.toDataURL(secret.otpauth_url, (err, dataUrl) => {
             if (err) {
                 console.error("Error generating QR code:", err);
                 return res.status(500).json({ error: "Could not generate QR code." });
             }
-            res.json({
-                secret: secret.base32,
-                qrCode: dataUrl
-            });
+            res.json({ secret: secret.base32, qrCode: dataUrl });
         });
     } catch (e) {
         console.error("Error generating TOTP secret:", e);
@@ -276,21 +233,13 @@ function create_app(config) {
     }
   });
 
-  // Verify TOTP during setup
   app.post('/verify_totp_setup', (req, res) => {
     try {
         const { secret, token } = req.body;
         if (!secret || !token) {
             return res.status(400).json({ valid: false, error: "Missing secret or token." });
         }
-        
-        const verified = speakeasy.totp.verify({
-            secret: secret,
-            encoding: 'base32',
-            token: token,
-            window: 2 // Allow 2 time steps before/after
-        });
-        
+        const verified = speakeasy.totp.verify({ secret: secret, encoding: 'base32', token: token, window: 2 });
         res.json({ valid: verified });
     } catch (e) {
         console.error("Error verifying TOTP:", e);
@@ -298,7 +247,6 @@ function create_app(config) {
     }
   });
 
-  // Check authentication type for a file
   app.get('/check_auth_type/:ident', (req, res) => {
     try {
         const ident = req.params.ident;
@@ -308,27 +256,17 @@ function create_app(config) {
         const filePath = ident_path(ident);
         
         fs.stat(filePath, (statErr, stats) => {
-            if (statErr) {
+            if (statErr || stats.size < 8) {
                 return res.json({ authType: 'none' });
             }
-            if (stats.size < 8) {
-                return res.json({ authType: 'none' });
-            }
-
-            // Read the last 8 bytes to check for magic
             const stream = fs.createReadStream(filePath, { start: stats.size - 8 });
             let footer = Buffer.alloc(0);
-            stream.on('data', (chunk) => {
-                footer = Buffer.concat([footer, chunk]);
-            });
+            stream.on('data', (chunk) => footer = Buffer.concat([footer, chunk]));
             stream.on('end', () => {
                 if (footer.length === 8) {
                     const magic = footer.toString('utf8', 0, 4);
-                    if (magic === "FACE") {
-                        return res.json({ authType: 'face' });
-                    } else if (magic === "TOTP") {
-                        return res.json({ authType: 'totp' });
-                    }
+                    if (magic === "FACE") return res.json({ authType: 'face' });
+                    if (magic === "TOTP") return res.json({ authType: 'totp' });
                 }
                 return res.json({ authType: 'none' });
             });
@@ -342,91 +280,55 @@ function create_app(config) {
     }
   });
 
-  // Verify face authentication
   app.post('/verify_face/:ident', (req, res) => {
     const ident = req.params.ident;
     const newFaceDataUri = req.body.faceDataUri;
 
-    if (!newFaceDataUri) {
-        return res.status(400).json({ verified: false, error: "No face data provided." });
-    }
-    if (!ident || ident.length !== 22 || path.basename(ident) !== ident) {
-        return res.status(400).json({ verified: false, error: "Invalid ident." });
-    }
+    if (!newFaceDataUri) return res.status(400).json({ verified: false, error: "No face data provided." });
+    if (!ident || ident.length !== 22 || path.basename(ident) !== ident) return res.status(400).json({ verified: false, error: "Invalid ident." });
 
     const filePath = ident_path(ident);
-    let fileStats;
-    let faceDataLength;
-    let encryptedFaceJson;
-    let originalFaceDataUri;
+    let fileStats, faceDataLength, encryptedFaceJson, originalFaceDataUri;
 
     try {
         fileStats = fs.statSync(filePath);
-    } catch (e) {
-        return res.status(404).json({ verified: false, error: "File not found." });
-    }
-
-    try {
         const footerBuffer = Buffer.alloc(8);
         const fd = fs.openSync(filePath, 'r');
         fs.readSync(fd, footerBuffer, 0, 8, fileStats.size - 8);
-        
         const magic = footerBuffer.toString('utf8', 0, 4);
         if (magic !== "FACE") {
             fs.closeSync(fd);
             throw new Error("File is not marked for face auth.");
         }
-        
         faceDataLength = footerBuffer.readUInt32BE(4);
-        
         const faceBuffer = Buffer.alloc(faceDataLength);
         fs.readSync(fd, faceBuffer, 0, faceDataLength, fileStats.size - 8 - faceDataLength);
         fs.closeSync(fd);
-        
         encryptedFaceJson = faceBuffer.toString('utf8');
-        
-        const keys = getECCKeys();
-        originalFaceDataUri = sjcl.decrypt(keys.sec, encryptedFaceJson);
+        originalFaceDataUri = sjcl.decrypt(getECCKeys().sec, encryptedFaceJson);
     } catch (err) {
         console.error("Error reading/decrypting face data:", err);
         return res.status(500).json({ verified: false, error: "Failed to read or decrypt face data." });
     }
 
     const deepFacePayload = {
-        "img1": originalFaceDataUri,
-        "img2": newFaceDataUri,
-        "model_name": "Facenet",
-        "detector_backend": "opencv",
-        "distance_metric": "cosine",
-        "anti_spoofing": true,
-        "align": true,
-        "enforce_detection": false
+        "img1": originalFaceDataUri, "img2": newFaceDataUri, "model_name": "Facenet", "detector_backend": "opencv",
+        "distance_metric": "cosine", "anti_spoofing": true, "align": true, "enforce_detection": false
     };
 
-    request.post({
-        url: 'http://localhost:5000/verify',
-        json: deepFacePayload,
-        timeout: 10000
-    }, (err, deepFaceRes, body) => {
+    request.post({ url: 'http://localhost:5000/verify', json: deepFacePayload, timeout: 10000 }, (err, deepFaceRes, body) => {
         if (err) {
             console.error("DeepFace request failed:", err);
             return res.status(500).json({ verified: false, error: "Verification server error." });
         }
-
         try {
             if (body && body.error) {
                 console.warn("DeepFace returned an error:", body.error);
                 let userError = "Verification failed. Please try again.";
-                
-                if (body.error.includes("Spoof detected in given image")) {
-                    userError = "Spoof detected. Please use a live, genuine face.";
-                } else if (body.error.includes("Face could not be detected")) {
-                    userError = "Face could not be detected. Please try again.";
-                }
-                
+                if (body.error.includes("Spoof detected")) userError = "Spoof detected. Please use a live, genuine face.";
+                if (body.error.includes("Face could not be detected")) userError = "Face could not be detected. Please try again.";
                 return res.status(403).json({ verified: false, error: userError });
             }
-
             if (body && body.verified === true) {
                 const mainFileEnd = fileStats.size - 8 - faceDataLength;
                 const fileStream = fs.createReadStream(filePath, { start: 0, end: mainFileEnd - 1 });
@@ -443,64 +345,39 @@ function create_app(config) {
     });
   });
 
-  // Verify TOTP authentication
   app.post('/verify_totp/:ident', (req, res) => {
     const ident = req.params.ident;
     const token = req.body.token;
 
-    if (!token) {
-        return res.status(400).json({ verified: false, error: "No TOTP token provided." });
-    }
-    if (!ident || ident.length !== 22 || path.basename(ident) !== ident) {
-        return res.status(400).json({ verified: false, error: "Invalid ident." });
-    }
+    if (!token) return res.status(400).json({ verified: false, error: "No TOTP token provided." });
+    if (!ident || ident.length !== 22 || path.basename(ident) !== ident) return res.status(400).json({ verified: false, error: "Invalid ident." });
 
     const filePath = ident_path(ident);
-    let fileStats;
-    let totpDataLength;
-    let encryptedTOTPJson;
-    let totpSecret;
+    let fileStats, totpDataLength, encryptedTOTPJson, totpSecret;
 
     try {
         fileStats = fs.statSync(filePath);
-    } catch (e) {
-        return res.status(404).json({ verified: false, error: "File not found." });
-    }
-
-    try {
         const footerBuffer = Buffer.alloc(8);
         const fd = fs.openSync(filePath, 'r');
         fs.readSync(fd, footerBuffer, 0, 8, fileStats.size - 8);
-        
         const magic = footerBuffer.toString('utf8', 0, 4);
         if (magic !== "TOTP") {
             fs.closeSync(fd);
             throw new Error("File is not marked for TOTP auth.");
         }
-        
         totpDataLength = footerBuffer.readUInt32BE(4);
-        
         const totpBuffer = Buffer.alloc(totpDataLength);
         fs.readSync(fd, totpBuffer, 0, totpDataLength, fileStats.size - 8 - totpDataLength);
         fs.closeSync(fd);
-        
         encryptedTOTPJson = totpBuffer.toString('utf8');
-        
-        const keys = getECCKeys();
-        totpSecret = sjcl.decrypt(keys.sec, encryptedTOTPJson);
+        totpSecret = sjcl.decrypt(getECCKeys().sec, encryptedTOTPJson);
     } catch (err) {
         console.error("Error reading/decrypting TOTP data:", err);
         return res.status(500).json({ verified: false, error: "Failed to read or decrypt TOTP data." });
     }
 
     try {
-        const verified = speakeasy.totp.verify({
-            secret: totpSecret,
-            encoding: 'base32',
-            token: token,
-            window: 2
-        });
-
+        const verified = speakeasy.totp.verify({ secret: totpSecret, encoding: 'base32', token: token, window: 2 });
         if (verified) {
             const mainFileEnd = fileStats.size - 8 - totpDataLength;
             const fileStream = fs.createReadStream(filePath, { start: 0, end: mainFileEnd - 1 });
@@ -514,18 +391,14 @@ function create_app(config) {
         res.status(500).json({ verified: false, error: "TOTP verification error." });
     }
   });
-
   return app
 }
 
 function get_addr_port(s) {
     var spl = s.split(":");
-    if (spl.length === 1)
-        return { host: spl[0], port: 80 };
-    else if (spl[0] === '')
-        return { port: parseInt(spl[1]) };
-    else
-        return { host: spl[0], port: parseInt(spl[1]) };
+    if (spl.length === 1) return { host: spl[0], port: 80 };
+    if (spl[0] === '') return { port: parseInt(spl[1]) };
+    return { host: spl[0], port: parseInt(spl[1]) };
 }
 
 function serv(server, serverconfig, callback) {
@@ -537,12 +410,11 @@ function serv(server, serverconfig, callback) {
 }
 
 function init_defaults(config) {
-  config.path = config.path ? config.path : {};
-  config.path.i = config.path.i ? config.path.i : "../i";
-  config.path.client = config.path.client ? config.path.client : "../client";
-  
-  config.http = config.http ? config.http : { enabled: true, listen: ":80" };
-  config.https = config.https ? config.https : { enabled: false };
+  config.path = config.path || {};
+  config.path.i = config.path.i || "../i";
+  config.path.client = config.path.client || "../client";
+  config.http = config.http || { enabled: true, listen: ":80" };
+  config.https = config.https || { enabled: false };
 }
 
 function init(config) {
@@ -551,24 +423,15 @@ function init(config) {
   var app = create_app(config);
 
   if (config.http.enabled) {
-    serv(http.createServer(app), config.http, function(host, port) {
-      console.info('Started HTTP server at http://%s:%s', host, port);
-    });
+    serv(http.createServer(app), config.http, (host, port) => console.info('Started HTTP server at http://%s:%s', host, port));
   }
-
   if (config.https.enabled) {
       if (!config.https.key || !config.https.cert) {
-          console.error("HTTPS is enabled but 'key' or 'cert' path is missing in config.");
-          return;
+          return console.error("HTTPS is enabled but 'key' or 'cert' path is missing in config.");
       }
       try {
-          var sec_creds = {
-              key: fs.readFileSync(config.https.key),
-              cert: fs.readFileSync(config.https.cert)
-          };
-          serv(https.createServer(sec_creds, app), config.https, function(host, port) {
-            console.info('Started HTTPS server at https://%s:%s', host, port);
-          });
+          var sec_creds = { key: fs.readFileSync(config.https.key), cert: fs.readFileSync(config.https.cert) };
+          serv(https.createServer(sec_creds, app), config.https, (host, port) => console.info('Started HTTPS server at https://%s:%s', host, port));
       } catch (e) {
           console.error("Could not start HTTPS server. Check key/cert paths and permissions.", e.Message);
       }

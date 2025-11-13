@@ -136,7 +136,6 @@ function encrypt_totp(pubKeyBase64, totpSecret, id) {
         'encryptedTOTP': encryptedTOTPJson
     });
 }
-// END: ADDED MISSING FUNCTION
 
 function onprogress(id, progress) {
     postMessage({
@@ -163,10 +162,8 @@ onmessage = function (e) {
             encrypt(e.data.data, e.data.seed, e.data.id, e.data.password);
         } else if (e.data.action == 'encrypt_face') {
             encrypt_face(e.data.pubKey, e.data.faceData, e.data.id);
-        // START: ADDED HANDLER FOR TOTP
         } else if (e.data.action == 'encrypt_totp') {
             encrypt_totp(e.data.pubKey, e.data.totpSecret, e.data.id);
-        // END: ADDED HANDLER FOR TOTP
         } else {
             postMessage({
                 'id': e.data.id,

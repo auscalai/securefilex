@@ -183,7 +183,6 @@ function setupTOTPPrompt() {
     
     var currentDeferred = null;
     
-    // Format input to only allow digits
     input.on('input', function(e) {
         var value = e.target.value.replace(/\D/g, '');
         input.val(value);
