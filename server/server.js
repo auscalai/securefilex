@@ -2,6 +2,7 @@ var crypto = require('crypto');
 var fs = require('fs');
 var path = require('path');
 var vm = require('vm');
+var schedule = require('node-schedule'); // <-- ADD THIS
 
 try {
     const sjclPath = require.resolve('sjcl');
@@ -35,15 +36,10 @@ function handle_upload(req, res) {
     var fields = {};
     var tmpfname = null;
 
-    busboy.on('field', function(fieldname, value) {
-        fields[fieldname] = value;
-    });
+    busboy.on('field', (fieldname, value) => fields[fieldname] = value);
 
-    busboy.on('file', function(fieldname, file, filename) {
-        if (fieldname !== 'file') {
-            file.resume();
-            return;
-        }
+    busboy.on('file', (fieldname, file, filename) => {
+        if (fieldname !== 'file') return file.resume();
         try {
             var ftmp = tmp.fileSync({ postfix: '.tmp', dir: req.app.locals.config.path.i, keep: true });
             tmpfname = ftmp.name;
@@ -57,30 +53,22 @@ function handle_upload(req, res) {
         }
     });
 
-    busboy.on('finish', function() {
+    busboy.on('finish', () => {
         try {
-            if (!tmpfname) {
-                res.status(500).send("Internal Server Error");
-            } else if (fields.api_key !== config['api_key']) {
-                res.status(403).json({error: "API key doesn't match", code: 2});
-            } else if (!fields.ident) {
-                res.status(400).json({error: "Ident not provided", code: 11});
-            } else if (fields.ident.length !== 22) {
-                res.status(400).json({error: "Ident length is incorrect", code: 3});
-            } else if (ident_exists(fields.ident)) {
-                res.status(409).json({error: "Ident is already taken.", code: 4});
-            } else {
-                var delhmac = crypto.createHmac('sha256', config.delete_key)
-                                    .update(fields.ident)
-                                    .digest('hex');
-                fs.rename(tmpfname, ident_path(fields.ident), function(err) {
-                    if (err) {
-                         console.error("Error renaming file:", err);
-                         return res.status(500).send("Internal Server Error");
-                    }
-                    res.json({delkey: delhmac});
-                });
-            }
+            if (!tmpfname) return res.status(500).send("Internal Server Error");
+            if (fields.api_key !== config['api_key']) return res.status(403).json({error: "API key doesn't match", code: 2});
+            if (!fields.ident) return res.status(400).json({error: "Ident not provided", code: 11});
+            if (fields.ident.length !== 22) return res.status(400).json({error: "Ident length is incorrect", code: 3});
+            if (ident_exists(fields.ident)) return res.status(409).json({error: "Ident is already taken.", code: 4});
+            
+            var delhmac = crypto.createHmac('sha256', config.delete_key).update(fields.ident).digest('hex');
+            fs.rename(tmpfname, ident_path(fields.ident), (err) => {
+                if (err) {
+                     console.error("Error renaming file:", err);
+                     return res.status(500).send("Internal Server Error");
+                }
+                res.json({delkey: delhmac});
+            });
         } catch (err) {
             console.error("Error in busboy finish:", err);
             res.status(500).send("Internal Server Error");
@@ -91,40 +79,37 @@ function handle_upload(req, res) {
 
 function handle_delete(req, res) {
     var config = req.app.locals.config
-    if (!req.query.ident) {
-        return res.status(400).json({error: "Ident not provided", code: 11});
-    }
-    if (!req.query.delkey) {
-        return res.status(400).json({error: "Delete key not provided", code: 12});
-    }
-    var delhmac = crypto.createHmac('sha256', config.delete_key)
-                        .update(req.query.ident)
-                        .digest('hex');
+    if (!req.query.ident) return res.status(400).json({error: "Ident not provided", code: 11});
+    if (!req.query.delkey) return res.status(400).json({error: "Delete key not provided", code: 12});
+    
+    var delhmac = crypto.createHmac('sha256', config.delete_key).update(req.query.ident).digest('hex');
 
-    if (req.query.ident.length !== 22) {
-        res.status(400).json({error: "Ident length is incorrect", code: 3});
-    } else if (delhmac !== req.query.delkey) {
-        res.status(403).json({error: "Incorrect delete key", code: 10});
-    } else if (!ident_exists(req.query.ident)) {
-        res.status(404).json({error: "Ident does not exist", code: 9});
-    } else {
-        fs.unlink(ident_path(req.query.ident), function(err) {
-            if (err) {
-                console.error("Error deleting file:", err);
-                return res.status(500).send("Error deleting file");
-            }
-            cf_invalidate(req.query.ident, config);
-            res.redirect('/');
-        });
-    }
+    if (req.query.ident.length !== 22) return res.status(400).json({error: "Ident length is incorrect", code: 3});
+    if (delhmac !== req.query.delkey) return res.status(403).json({error: "Incorrect delete key", code: 10});
+    if (!ident_exists(req.query.ident)) return res.status(404).json({error: "Ident does not exist", code: 9});
+
+    fs.unlink(ident_path(req.query.ident), (err) => {
+        if (err) {
+            console.error("Error deleting file:", err);
+            return res.status(500).send("Error deleting file");
+        }
+        // Also delete metadata file if it exists
+        fs.unlink(meta_path(req.query.ident), () => {});
+        cf_invalidate(req.query.ident, config);
+        res.redirect('/');
+    });
 };
 
 function ident_path(ident) {
     const safeIdent = path.basename(ident);
-    if (safeIdent !== ident) {
-        throw new Error("Invalid ident format.");
-    }
+    if (safeIdent !== ident) throw new Error("Invalid ident format.");
     return path.join(__dirname, '../i/', safeIdent);
+}
+
+function meta_path(ident) {
+    const safeIdent = path.basename(ident);
+    if (safeIdent !== ident) throw new Error("Invalid ident format.");
+    return path.join(__dirname, '../meta/', `${safeIdent}.json`);
 }
 
 function ident_exists(ident) {
@@ -198,12 +183,46 @@ function create_app(config) {
   var app = express();
   app.locals.config = config;
   app.use(express.json({ limit: '5mb' }));
+  app.use(express.urlencoded({ extended: true })); 
   
   app.use('', express.static(config.path.client));
   app.use('/i', express.static(config.path.i));
   
   app.post('/up', handle_upload);
   app.get('/del', handle_delete);
+
+  // START: Modified endpoint with stricter validation
+  app.post('/set_expiry/:ident', (req, res) => {
+      const { ident } = req.params;
+      const { delkey, duration } = req.body;
+      const durationHours = parseFloat(duration); // Use parseFloat for minutes
+      
+      // --- Backend Validation ---
+      const MAX_HOURS = 30 * 24; // 30 days
+      if (!ident || !delkey || isNaN(durationHours) || durationHours <= 0 || durationHours > MAX_HOURS) {
+          return res.status(400).json({ error: "Invalid or missing fields, or duration out of range." });
+      }
+      if (!ident_exists(ident)) {
+          return res.status(404).json({ error: "Ident does not exist." });
+      }
+
+      const expectedDelkey = crypto.createHmac('sha256', config.delete_key).update(ident).digest('hex');
+      if (delkey !== expectedDelkey) {
+          return res.status(403).json({ error: "Invalid delete key." });
+      }
+
+      const now = new Date();
+      const expiresAt = now.getTime() + (durationHours * 60 * 60 * 1000);
+      const metadata = { expiresAt };
+
+      fs.writeFile(meta_path(ident), JSON.stringify(metadata), (err) => {
+          if (err) {
+              console.error("Error writing metadata file:", err);
+              return res.status(500).json({ error: "Could not save expiration data." });
+          }
+          res.status(200).json({ message: "Expiry set successfully." });
+      });
+  });
 
   app.get('/public_key', (req, res) => {
     try {
@@ -412,23 +431,69 @@ function serv(server, serverconfig, callback) {
 function init_defaults(config) {
   config.path = config.path || {};
   config.path.i = config.path.i || "../i";
+  config.path.meta = config.path.meta || "../meta";
   config.path.client = config.path.client || "../client";
   config.http = config.http || { enabled: true, listen: ":80" };
   config.https = config.https || { enabled: false };
 }
 
+function startCleanupJob(config) {
+    schedule.scheduleJob('*/5 * * * *', function() {
+        console.log(`[${new Date().toISOString()}] Running cleanup job for expired files...`);
+        const metaDir = path.resolve(__dirname, config.path.meta);
+        const filesDir = path.resolve(__dirname, config.path.i);
+
+        fs.readdir(metaDir, (err, files) => {
+            if (err) return console.error("Could not list metadata directory for cleanup:", err);
+            
+            files.forEach(file => {
+                if (path.extname(file) !== '.json') return;
+                
+                const metaPath = path.join(metaDir, file);
+                fs.readFile(metaPath, 'utf8', (readErr, content) => {
+                    if (readErr) return console.error(`Could not read meta file ${file}:`, readErr);
+                    try {
+                        const metadata = JSON.parse(content);
+                        if (metadata.expiresAt && Date.now() > metadata.expiresAt) {
+                            const ident = path.basename(file, '.json');
+                            const filePath = path.join(filesDir, ident);
+                            
+                            console.log(`File ${ident} has expired. Deleting...`);
+                            fs.unlink(filePath, (unlinkErr) => {
+                                if (unlinkErr && unlinkErr.code !== 'ENOENT') {
+                                   console.error(`Failed to delete data file for ${ident}:`, unlinkErr);
+                                } else {
+                                    fs.unlink(metaPath, (metaUnlinkErr) => {
+                                        if (metaUnlinkErr) console.error(`Failed to delete meta file for ${ident}:`, metaUnlinkErr);
+                                        else console.log(`Successfully deleted expired file and metadata for ${ident}.`);
+                                    });
+                                }
+                            });
+                        }
+                    } catch (parseErr) {
+                        console.error(`Could not parse meta file ${file}:`, parseErr);
+                    }
+                });
+            });
+        });
+    });
+    console.log('Scheduled file cleanup job to run every 5 minutes.');
+}
+
 function init(config) {
   init_defaults(config)
+  const metaDir = path.resolve(__dirname, config.path.meta);
+  if (!fs.existsSync(metaDir)) {
+      console.log(`Creating metadata directory at: ${metaDir}`);
+      fs.mkdirSync(metaDir, { recursive: true });
+  }
+
   getECCKeys();
   var app = create_app(config);
 
-  if (config.http.enabled) {
-    serv(http.createServer(app), config.http, (host, port) => console.info('Started HTTP server at http://%s:%s', host, port));
-  }
+  if (config.http.enabled) serv(http.createServer(app), config.http, (host, port) => console.info('Started HTTP server at http://%s:%s', host, port));
   if (config.https.enabled) {
-      if (!config.https.key || !config.https.cert) {
-          return console.error("HTTPS is enabled but 'key' or 'cert' path is missing in config.");
-      }
+      if (!config.https.key || !config.https.cert) return console.error("HTTPS is enabled but 'key' or 'cert' path is missing in config.");
       try {
           var sec_creds = { key: fs.readFileSync(config.https.key), cert: fs.readFileSync(config.https.cert) };
           serv(https.createServer(sec_creds, app), config.https, (host, port) => console.info('Started HTTPS server at https://%s:%s', host, port));
@@ -436,7 +501,10 @@ function init(config) {
           console.error("Could not start HTTPS server. Check key/cert paths and permissions.", e.Message);
       }
   }
+
+  startCleanupJob(config); // <-- START THE JOB
 }
+
 
 function main(configpath) {
   if (!path.isAbsolute(configpath)) {
