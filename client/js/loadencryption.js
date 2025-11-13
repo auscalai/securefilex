@@ -109,3 +109,14 @@ crypt.encryptFace = function (pubKeyBase64, faceDataUri) {
     });
     return promise;
 };
+crypt.encryptTOTP = function (pubKeyBase64, totpSecret) {
+    var promise = getpromise();
+    worker.postMessage({
+        'action': 'encrypt_totp',
+        'pubKey': pubKeyBase64,
+        'totpSecret': totpSecret,
+        'entropy': getEntropy(),
+        'id': promise.id
+    });
+    return promise;
+};

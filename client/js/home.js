@@ -28,10 +28,19 @@ upload.modules.addmodule({
                 <p style="margin-bottom: 25px; color: #eee; opacity: 0.8;">This password will be required to decrypt the file.</p>\
                 <form id="passwordform" style="width: 100%;">\
                     <input type="password" id="passwordfield" placeholder="Enter password..." class="password-input-global" />\
-                    <button type="submit" class="btn password-btn-global" id="upload_submit_btn">Encrypt & Upload</button>\
+                    <button type="submit" class="btn password-btn-global" id="upload_submit_btn">Continue</button>\
                     <button type="button" id="cancelupload" class="btn password-btn-global cancel-btn">Cancel</button>\
                     <div id="upload_password_error_msg" class="password-error-global" style="min-height: 1.2em;"></div>\
                 </form>\
+            </div>\
+        </div>\
+        <div id="twofa_choice_modal_overlay" class="hidden modal password-modal-global">\
+            <div class="boxarea password-card-global" id="twofa_choice_card">\
+                <h2 class="password-title-global">Choose 2FA Method (Optional)</h2>\
+                <p style="margin-bottom: 25px; color: #eee; opacity: 0.8;">Add an extra layer of security to your file.</p>\
+                <button type="button" class="btn password-btn-global" id="choose_face_btn">Facial Recognition</button>\
+                <button type="button" class="btn password-btn-global" id="choose_totp_btn">Google Authenticator (TOTP)</button>\
+                <button type="button" class="btn password-btn-global cancel-btn" id="skip_2fa_btn">Skip 2FA</button>\
             </div>\
         </div>\
         <div id="upload_face_modal_overlay" class="hidden modal password-modal-global">\
@@ -44,8 +53,28 @@ upload.modules.addmodule({
                     <div id="face_spinner" class="hidden"><div class="spinner"></div></div>\
                 </div>\
                 <button type="button" class="btn password-btn-global" id="capture_face_btn">Capture & Encrypt</button>\
-                <button type="button" id="skip_face_btn" class="btn password-btn-global cancel-btn">Skip This Step</button>\
+                <button type="button" id="back_from_face_btn" class="btn password-btn-global cancel-btn">Back</button>\
                 <div id="face_modal_error_msg" class="password-error-global" style="min-height: 1.2em;"></div>\
+            </div>\
+        </div>\
+        <div id="upload_totp_modal_overlay" class="hidden modal password-modal-global">\
+            <div class="boxarea password-card-global" id="totp_modal_card" style="max-width: 500px;">\
+                <h2 class="password-title-global">Setup Google Authenticator</h2>\
+                <p style="margin-bottom: 20px; color: #eee; opacity: 0.8;">Scan this QR code with Google Authenticator app.</p>\
+                <div id="totp_qr_container" style="text-align: center; margin-bottom: 20px;">\
+                    <div id="totp_qr_code"></div>\
+                </div>\
+                <div style="margin-bottom: 20px;">\
+                    <label style="color: #eee; display: block; margin-bottom: 8px; font-size: 14px;">Or enter this secret manually:</label>\
+                    <input type="text" id="totp_secret_display" readonly class="password-input-global" style="font-family: monospace; text-align: center; font-size: 18px; letter-spacing: 2px;" />\
+                </div>\
+                <div style="margin-bottom: 20px;">\
+                    <label style="color: #eee; display: block; margin-bottom: 8px; font-size: 14px;">Verify by entering the 6-digit code:</label>\
+                    <input type="text" id="totp_verify_input" placeholder="000000" maxlength="6" class="password-input-global" style="font-family: monospace; text-align: center; font-size: 24px; letter-spacing: 4px;" />\
+                </div>\
+                <button type="button" class="btn password-btn-global" id="verify_totp_btn">Verify & Encrypt</button>\
+                <button type="button" id="back_from_totp_btn" class="btn password-btn-global cancel-btn">Back</button>\
+                <div id="totp_modal_error_msg" class="password-error-global" style="min-height: 1.2em;"></div>\
             </div>\
         </div>\
         ',
@@ -62,8 +91,21 @@ upload.modules.addmodule({
         $(document).on('paste', this.pasted.bind(this))
         $(document).on('submit', '#passwordform', this.submitpassword.bind(this))
         $(document).on('click', '#cancelupload', this.cancelupload.bind(this))
+        
+        // 2FA choice handlers
+        $(document).on('click', '#choose_face_btn', this.chooseFace.bind(this))
+        $(document).on('click', '#choose_totp_btn', this.chooseTOTP.bind(this))
+        $(document).on('click', '#skip_2fa_btn', this.skip2FA.bind(this))
+        
+        // Face handlers
         $(document).on('click', '#capture_face_btn', this.captureFace.bind(this))
-        $(document).on('click', '#skip_face_btn', this.skipFace.bind(this))
+        $(document).on('click', '#back_from_face_btn', this.backFrom2FA.bind(this))
+        
+        // TOTP handlers
+        $(document).on('click', '#verify_totp_btn', this.verifyTOTP.bind(this))
+        $(document).on('click', '#back_from_totp_btn', this.backFrom2FA.bind(this))
+        $(document).on('input', '#totp_verify_input', this.formatTOTPInput.bind(this))
+        
         this.state = {};
     },
     dragleave: function (e) {
@@ -109,17 +151,34 @@ upload.modules.addmodule({
         this._.progress.type = view.find('#progresstype')
         this._.progress.amount = view.find('#progressamount')
         this._.progress.bg = view.find('#progressamountbg')
+        
+        // Password modal
         this._.passwordmodal = view.find('#upload_password_modal_overlay')
         this._.passwordfield = view.find('#passwordfield')
         this._.uploadview = view.find('#uploadview')
         this._.uploadErrorMsg = view.find('#upload_password_error_msg')
         this._.passwordCard = view.find('#passwordmodal_card')
+        
+        // 2FA choice modal
+        this._.twofaChoiceModal = view.find('#twofa_choice_modal_overlay')
+        this._.twofaChoiceCard = view.find('#twofa_choice_card')
+        
+        // Face modal
         this._.facemodal = view.find('#upload_face_modal_overlay')
         this._.faceCard = view.find('#face_modal_card')
         this._.faceWebcam = view.find('#face_webcam')[0]
         this._.faceCanvas = view.find('#face_canvas')[0]
         this._.faceSpinner = view.find('#face_spinner')
         this._.faceErrorMsg = view.find('#face_modal_error_msg')
+        
+        // TOTP modal
+        this._.totpmodal = view.find('#upload_totp_modal_overlay')
+        this._.totpCard = view.find('#totp_modal_card')
+        this._.totpQRContainer = view.find('#totp_qr_code')
+        this._.totpSecretDisplay = view.find('#totp_secret_display')
+        this._.totpVerifyInput = view.find('#totp_verify_input')
+        this._.totpErrorMsg = view.find('#totp_modal_error_msg')
+        
         this.webcam = new Webcam(this._.faceWebcam, 'user', this._.faceCanvas); 
         $('#footer').show()
     },
@@ -219,9 +278,93 @@ upload.modules.addmodule({
                 self._.passwordmodal.addClass('hidden');
                 self._.passwordfield.val('');
                 self._.uploadErrorMsg.text('');
+                self.show2FAChoice();
+            }
+        });
+    },
+    show2FAChoice: function() {
+        var self = this;
+        this._.twofaChoiceModal.removeClass('hidden');
+        anime.remove(this._.twofaChoiceCard[0]);
+        anime({
+            targets: this._.twofaChoiceCard[0],
+            scale: [0.9, 1],
+            opacity: [0, 1],
+            duration: 400,
+            easing: 'easeOutQuad'
+        });
+    },
+    chooseFace: function() {
+        var self = this;
+        anime({
+            targets: self._.twofaChoiceCard[0],
+            scale: [1, 0.9],
+            opacity: [1, 0],
+            duration: 300,
+            easing: 'easeInQuad',
+            complete: function() {
+                self._.twofaChoiceModal.addClass('hidden');
                 self.startFaceModal();
             }
         });
+    },
+    chooseTOTP: function() {
+        var self = this;
+        anime({
+            targets: self._.twofaChoiceCard[0],
+            scale: [1, 0.9],
+            opacity: [1, 0],
+            duration: 300,
+            easing: 'easeInQuad',
+            complete: function() {
+                self._.twofaChoiceModal.addClass('hidden');
+                self.startTOTPModal();
+            }
+        });
+    },
+    skip2FA: function() {
+        var self = this;
+        anime({
+            targets: self._.twofaChoiceCard[0],
+            scale: [1, 0.9],
+            opacity: [1, 0],
+            duration: 300,
+            easing: 'easeInQuad',
+            complete: function() {
+                self._.twofaChoiceModal.addClass('hidden');
+                self.startUpload(null); // No 2FA data
+            }
+        });
+    },
+    backFrom2FA: function() {
+        var self = this;
+        // Close whichever modal is open
+        if (!this._.facemodal.hasClass('hidden')) {
+            this.webcam.stop();
+            anime({
+                targets: self._.faceCard[0],
+                scale: [1, 0.9],
+                opacity: [1, 0],
+                duration: 300,
+                easing: 'easeInQuad',
+                complete: function() {
+                    self._.facemodal.addClass('hidden');
+                    self.show2FAChoice();
+                }
+            });
+        } else if (!this._.totpmodal.hasClass('hidden')) {
+            anime({
+                targets: self._.totpCard[0],
+                scale: [1, 0.9],
+                opacity: [1, 0],
+                duration: 300,
+                easing: 'easeInQuad',
+                complete: function() {
+                    self._.totpmodal.addClass('hidden');
+                    self.show2FAChoice();
+                }
+            });
+        }
     },
     startFaceModal: function() {
         var self = this;
@@ -256,18 +399,18 @@ upload.modules.addmodule({
         this._.faceErrorMsg.text('');
         $.get('/public_key')
             .done(function(keyData) {
-                self.encryptAndUpload(faceDataUri, keyData.key);
+                self.encryptFaceAndUpload(faceDataUri, keyData.key);
             })
             .fail(function() {
                 self._.faceSpinner.addClass('hidden');
                 self._.faceErrorMsg.text("Error: Could not contact server to get public key.");
             });
     },
-    encryptAndUpload: function(faceDataUri, pubKeyBase64) {
+    encryptFaceAndUpload: function(faceDataUri, pubKeyBase64) {
         var self = this;
         crypt.encryptFace(pubKeyBase64, faceDataUri)
             .done(function(result) {
-                self.startUpload(result.encryptedFace);
+                self.startUpload({ type: 'face', data: result.encryptedFace });
             })
             .fail(function(err) {
                 console.error("Face encryption failed:", err);
@@ -275,24 +418,135 @@ upload.modules.addmodule({
                 self._.faceErrorMsg.text("A crypto error occurred during face encryption.");
             });
     },
-    skipFace: function() {
+    startTOTPModal: function() {
         var self = this;
-        this.webcam.stop();
+        this._.totpmodal.removeClass('hidden');
+        this._.totpErrorMsg.text('');
+        this._.totpVerifyInput.val('');
+        anime.remove(this._.totpCard[0]);
         anime({
-            targets: self._.faceCard[0],
-            scale: [1, 0.9],
-            opacity: [1, 0],
-            duration: 300,
-            easing: 'easeInQuad',
-            complete: function() {
-                self._.facemodal.addClass('hidden');
-                self.startUpload(null); 
+            targets: this._.totpCard[0],
+            scale: [0.9, 1],
+            opacity: [0, 1],
+            duration: 400,
+            easing: 'easeOutQuad'
+        });
+        
+        // Generate TOTP secret and QR code
+        $.get('/generate_totp')
+            .done(function(response) {
+                self.state.totpSecret = response.secret;
+                self._.totpSecretDisplay.val(response.secret);
+                self._.totpQRContainer.html('<img src="' + response.qrCode + '" style="max-width: 100%; height: auto;" />');
+            })
+            .fail(function() {
+                self._.totpErrorMsg.text("Error: Could not generate TOTP secret.");
+            });
+    },
+    formatTOTPInput: function(e) {
+        // Only allow digits
+        var value = e.target.value.replace(/\D/g, '');
+        this._.totpVerifyInput.val(value);
+    },
+    verifyTOTP: function() {
+        var self = this;
+        var code = this._.totpVerifyInput.val();
+        
+        if (code.length !== 6) {
+            this._.totpErrorMsg.text("Please enter a 6-digit code.");
+            anime.remove(self._.totpCard[0]);
+            anime({
+                targets: self._.totpCard[0],
+                translateX: [-10, 10, -10, 10, 0],
+                duration: 300,
+                easing: 'easeInOutSine'
+            });
+            return;
+        }
+        
+        this._.totpErrorMsg.text('Verifying...');
+        
+        // Verify the TOTP code
+         $.ajax({
+            type: 'POST',
+            url: '/verify_totp_setup',
+            data: JSON.stringify({
+                secret: this.state.totpSecret,
+                token: code
+            }),
+            contentType: 'application/json; charset=utf-8',
+            dataType: 'json',
+            success: function(response) {
+                // This block runs for 2xx responses
+                if (response.valid) {
+                    // Get public key and encrypt TOTP secret
+                    $.get('/public_key')
+                        .done(function(keyData) {
+                            self.encryptTOTPAndUpload(self.state.totpSecret, keyData.key);
+                        })
+                        .fail(function() {
+                            self._.totpErrorMsg.text("Error: Could not contact server to get public key.");
+                        });
+                } else {
+                    // This case may not be hit if the server sends a 400 for invalid codes,
+                    // but it's here for safety.
+                    self._.totpErrorMsg.text("Invalid code. Please try again.");
+                    anime.remove(self._.totpCard[0]);
+                    anime({
+                        targets: self._.totpCard[0],
+                        translateX: [-10, 10, -10, 10, 0],
+                        duration: 300,
+                        easing: 'easeInOutSine'
+                    });
+                }
+            },
+            error: function(xhr) {
+                // This block runs for 4xx/5xx responses (like the 400 Bad Request you were getting)
+                var errorMessage = "Verification failed. Please try again.";
+                try {
+                    // Try to parse the specific error message from the server response
+                    var errorResponse = JSON.parse(xhr.responseText);
+                    if (errorResponse && errorResponse.error) {
+                        errorMessage = errorResponse.error; // e.g., "Invalid code."
+                    }
+                } catch (e) {
+                    // Could not parse the error, use the generic message
+                }
+                self._.totpErrorMsg.text(errorMessage);
+                anime.remove(self._.totpCard[0]);
+                anime({
+                    targets: self._.totpCard[0],
+                    translateX: [-10, 10, -10, 10, 0],
+                    duration: 300,
+                    easing: 'easeInOutSine'
+                });
             }
         });
     },
-    startUpload: function(encryptedFaceData) {
+    encryptTOTPAndUpload: function(totpSecret, pubKeyBase64) {
         var self = this;
-        this.webcam.stop();
+        crypt.encryptTOTP(pubKeyBase64, totpSecret)
+            .done(function(result) {
+                self.startUpload({ type: 'totp', data: result.encryptedTOTP });
+            })
+            .fail(function(err) {
+                console.error("TOTP encryption failed:", err);
+                self._.totpErrorMsg.text("A crypto error occurred during TOTP encryption.");
+            });
+    },
+    startUpload: function(twoFAData) {
+        var self = this;
+        
+        // Stop webcam if it's running
+        if (this.webcam) {
+            this.webcam.stop();
+        }
+        
+        // Close any open modals
+        var closeModal = function() {
+            self.showProgressAndUpload(twoFAData);
+        };
+        
         if (!this._.facemodal.hasClass('hidden')) {
             anime({
                 targets: self._.faceCard[0],
@@ -302,26 +556,40 @@ upload.modules.addmodule({
                 easing: 'easeInQuad',
                 complete: function() {
                     self._.facemodal.addClass('hidden');
-                    self.showProgressAndUpload(encryptedFaceData);
+                    closeModal();
+                }
+            });
+        } else if (!this._.totpmodal.hasClass('hidden')) {
+            anime({
+                targets: self._.totpCard[0],
+                scale: [1, 0.9],
+                opacity: [1, 0],
+                duration: 300,
+                easing: 'easeInQuad',
+                complete: function() {
+                    self._.totpmodal.addClass('hidden');
+                    closeModal();
                 }
             });
         } else {
-            self.showProgressAndUpload(encryptedFaceData);
+            closeModal();
         }
     },
-    showProgressAndUpload: function(encryptedFaceData) {
+    showProgressAndUpload: function(twoFAData) {
         this._.pastearea.addClass('hidden');
         this._.progress.main.removeClass('hidden');
         this._.progress.type.text('Encrypting Locker');
         this._.progress.bg.css('width', 0);
         this._.newpaste.addClass('hidden');
+        
         upload.updown.upload(
             this._.uploadblob, 
             this.progress.bind(this), 
             this.uploaded.bind(this), 
             this.state.password, 
-            encryptedFaceData
+            twoFAData
         );
+        
         this._.uploadblob = null;
         this.state = {};
     },

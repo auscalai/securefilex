@@ -116,6 +116,28 @@ function encrypt_face(pubKeyBase64, faceDataUri, id) {
     });
 }
 
+function encrypt_totp(pubKeyBase64, totpSecret, id) {
+    var pubKeyPoint = sjcl.codec.base64.toBits(pubKeyBase64);
+    var pubKey = new sjcl.ecc.elGamal.publicKey(
+        sjcl.ecc.curves.c256,
+        pubKeyPoint
+    );
+    var encryptedTOTPJson = sjcl.encrypt(pubKey, totpSecret, {
+        adata: "",
+        iv: sjcl.random.randomWords(4),
+        iter: 1000,
+        ks: 256,
+        ts: 128,
+        v: 1
+    });
+    postMessage({
+        'id': id,
+        'type': 'encrypt_totp_result',
+        'encryptedTOTP': encryptedTOTPJson
+    });
+}
+// END: ADDED MISSING FUNCTION
+
 function onprogress(id, progress) {
     postMessage({
         'id': id,
@@ -141,6 +163,10 @@ onmessage = function (e) {
             encrypt(e.data.data, e.data.seed, e.data.id, e.data.password);
         } else if (e.data.action == 'encrypt_face') {
             encrypt_face(e.data.pubKey, e.data.faceData, e.data.id);
+        // START: ADDED HANDLER FOR TOTP
+        } else if (e.data.action == 'encrypt_totp') {
+            encrypt_totp(e.data.pubKey, e.data.totpSecret, e.data.id);
+        // END: ADDED HANDLER FOR TOTP
         } else {
             postMessage({
                 'id': e.data.id,

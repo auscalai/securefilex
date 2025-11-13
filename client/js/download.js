@@ -77,6 +77,7 @@ function setupPasswordPrompt() {
     }
 }
 setupPasswordPrompt();
+
 function setupFaceScanPrompt() {
     if (window.getFaceScan) { return; }
     var modal = $('<div>').attr('id', 'download_face_modal').addClass('modal hidden password-modal-global');
@@ -160,6 +161,112 @@ function setupFaceScanPrompt() {
     }
 }
 setupFaceScanPrompt();
+
+function setupTOTPPrompt() {
+    if (window.getTOTPCode) { return; }
+    var modal = $('<div>').attr('id', 'download_totp_modal').addClass('modal hidden password-modal-global');
+    var card = $('<div>').addClass('boxarea password-card-global');
+    var title = $('<h2>').text('TOTP Verification Required').addClass('password-title-global');
+    var p = $('<p>').text('Enter the 6-digit code from Google Authenticator.').css({marginBottom: '25px', color: '#eee', opacity: 0.8});
+    var input = $('<input>').prop('type', 'text').prop('placeholder', '000000')
+                            .prop('id', 'download_totp_input').prop('maxlength', 6)
+                            .addClass('password-input-global')
+                            .css({fontFamily: 'monospace', textAlign: 'center', fontSize: '24px', letterSpacing: '4px'});
+    var btn = $('<button>').addClass('btn password-btn-global').text('Verify Code');
+    var btnCancel = $('<button>').addClass('btn password-btn-global cancel-btn').text('Cancel Download');
+    var errorMsg = $('<div>').attr('id', 'download_totp_error_msg')
+                             .addClass('password-error-global')
+                             .css({minHeight: '1.2em'});
+    card.append(title, p, input, btn, btnCancel, errorMsg);
+    modal.append(card);
+    $('body').append(modal);
+    
+    var currentDeferred = null;
+    
+    // Format input to only allow digits
+    input.on('input', function(e) {
+        var value = e.target.value.replace(/\D/g, '');
+        input.val(value);
+    });
+    
+    var submitCode = function() {
+        var code = input.val();
+        if (code.length !== 6) {
+            $('#download_totp_error_msg').text("Please enter a 6-digit code.");
+            anime.remove(card[0]);
+            anime({
+                targets: card[0],
+                translateX: [-10, 10, -10, 10, 0],
+                duration: 300,
+                easing: 'easeInOutSine'
+            });
+            return;
+        }
+        if (currentDeferred) {
+            currentDeferred.resolve(code);
+            currentDeferred = null;
+        }
+    };
+    
+    btn.on('click', function(e) {
+        e.preventDefault();
+        submitCode();
+    });
+    
+    input.on('keypress', function(e) {
+        if (e.which === 13) {
+            e.preventDefault();
+            submitCode();
+        }
+    });
+    
+    btnCancel.on('click', function() {
+        modal.addClass('hidden');
+        if (currentDeferred) {
+            currentDeferred.reject('User cancelled TOTP verification.');
+            currentDeferred = null;
+        }
+    });
+    
+    window.getTOTPCode = function(errorMsgText) {
+        if (currentDeferred) {
+            currentDeferred.reject('Cancelled by new request');
+        }
+        currentDeferred = $.Deferred();
+        modal.removeClass('hidden');
+        input.val('');
+        $('#download_totp_error_msg').text(errorMsgText || '');
+        input.focus();
+        anime.remove(card[0]);
+        if (errorMsgText) {
+            anime({
+                targets: card[0],
+                translateX: [-10, 10, -10, 10, 0],
+                duration: 300,
+                easing: 'easeInOutSine'
+            });
+        } else {
+            anime({
+                targets: card[0],
+                scale: [0.9, 1],
+                opacity: [0, 1],
+                duration: 400,
+                easing: 'easeOutQuad'
+            });
+        }
+        return currentDeferred.promise();
+    };
+    
+    window.stopTOTPPrompt = function() {
+        modal.addClass('hidden');
+        if (currentDeferred) {
+            currentDeferred.reject('Verification complete');
+            currentDeferred = null;
+        }
+    }
+}
+setupTOTPPrompt();
+
 upload.modules.addmodule({
     name: 'download',
     delkeys: {},
@@ -265,6 +372,7 @@ upload.modules.addmodule({
     downloaded: function (data) {
         $('#password_modal').addClass('hidden');
         $('#download_face_modal').addClass('hidden');
+        $('#download_totp_modal').addClass('hidden');
         this._.filename.text(data.header.name);
         this._.title.text(data.header.name + ' - SecureFile Locker');
         var stored = localStorage.getItem('delete-' + data.ident);
@@ -342,6 +450,12 @@ upload.modules.addmodule({
                  break;
             case 'verifying_face':
                  this._.content.loading.text('Verifying face...');
+                 break;
+            case 'waiting_for_totp':
+                 this._.content.loading.text('Locker is protected. Please enter TOTP code.');
+                 break;
+            case 'verifying_totp':
+                 this._.content.loading.text('Verifying TOTP code...');
                  break;
             case 'cancelled':
                  this._.content.loading.text('Decryption cancelled by user.');

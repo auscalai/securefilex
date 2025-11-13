@@ -51,28 +51,39 @@ upload.modules.addmodule({
             done(cachedData); 
         }
     },
-    encrypted: function (progress, done, encryptedFace, aesData) {
+    encrypted: function (progress, done, twoFAData, aesData) {
         var finalBlob;
-        if (encryptedFace) {
+        
+        if (twoFAData) {
             var enc = new TextEncoder(); 
-            var faceBuffer = enc.encode(encryptedFace); 
+            var authBuffer = enc.encode(twoFAData.data); 
             var lengthBuffer = new ArrayBuffer(4);
             var lengthView = new DataView(lengthBuffer);
-            lengthView.setUint32(0, faceBuffer.byteLength, false); 
-            var magicBuffer = new Uint8Array([70, 65, 67, 69]);
+            lengthView.setUint32(0, authBuffer.byteLength, false);
+            
+            // Magic bytes for type identification
+            var magicBytes;
+            if (twoFAData.type === 'face') {
+                magicBytes = new Uint8Array([70, 65, 67, 69]); // "FACE"
+            } else if (twoFAData.type === 'totp') {
+                magicBytes = new Uint8Array([84, 79, 84, 80]); // "TOTP"
+            }
+            
             finalBlob = new Blob([
                 aesData.encrypted,
-                faceBuffer,
-                magicBuffer,
+                authBuffer,
+                magicBytes,
                 lengthBuffer
             ], { type: 'application/octet-stream' });
         } else {
             finalBlob = aesData.encrypted;
         }
+        
         var formdata = new FormData();
         formdata.append('api_key', upload.config.api_key);
         formdata.append('ident', aesData.ident);
         formdata.append('file', finalBlob);
+        
         $.ajax({
             url: (upload.config.server ? upload.config.server : '') + 'up',
             data: formdata,
@@ -111,13 +122,16 @@ upload.modules.addmodule({
     },
     checkAuthAndProceed: function(identResult, seed, progress, done) {
         var self = this;
-        $.get('/check_face_auth/' + identResult.ident)
+        $.get('/check_auth_type/' + identResult.ident)
             .done(function(authResult) {
-                if (authResult.hasFaceAuth) {
-                    console.log("File has Face Auth. Starting 2FA flow.");
+                if (authResult.authType === 'face') {
+                    console.log("File has Face Auth. Starting face verification.");
                     self.handleFaceAuthDownload(identResult, seed, progress, done);
+                } else if (authResult.authType === 'totp') {
+                    console.log("File has TOTP Auth. Starting TOTP verification.");
+                    self.handleTOTPAuthDownload(identResult, seed, progress, done);
                 } else {
-                    console.log("No Face Auth. Proceeding with normal password download.");
+                    console.log("No 2FA. Proceeding with password-only download.");
                     if (self.cached_seed == seed) {
                         self.tryDecrypt(self.cached, seed, progress, done, null);
                     } else {
@@ -129,7 +143,7 @@ upload.modules.addmodule({
                 }
             })
             .fail(function() {
-                console.warn("Face auth check failed. Proceeding with normal download.");
+                console.warn("Auth check failed. Proceeding with normal download.");
                 if (self.cached_seed == seed) {
                     self.tryDecrypt(self.cached, seed, progress, done, null);
                 } else {
@@ -147,17 +161,11 @@ upload.modules.addmodule({
             progress('error');
             return;
         }
-       // Define a recursive function to handle the verification loop
+        
         function attemptVerification(errorMsg) {
-            // 1. Show the face modal. This returns a promise.
-            // (The 'waiting_for_face' progress is handled by getFaceScan/download.js)
             window.getFaceScan(errorMsg).done(function(faceDataUri) {
-                
-                // 2. User clicked "Verify". The modal's click handler shows the spinner.
-                // We just update the main page text.
                 progress('verifying_face');
                 
-                // 3. Send to server for verification
                 fetch('/verify_face/' + identResult.ident, {
                     method: 'POST',
                     headers: {
@@ -167,23 +175,18 @@ upload.modules.addmodule({
                 })
                 .then(function(response) {
                     if (response.ok) {
-                        // SUCCESS (HTTP 200-299)
                         return response.blob();
                     } else {
-                        // FAILURE (HTTP 4xx, 5xx)
-                        // Manually get the text, then try to parse it.
                         return response.text().then(function(text) {
                             var errorMsg = 'Face verification failed. Server returned ' + response.status;
                             try {
-                                // Try to parse the text as JSON
                                 var errorJson = JSON.parse(text);
                                 if (errorJson && errorJson.error) {
-                                    errorMsg = errorJson.error; // SUCCESS! Get the descriptive error.
+                                    errorMsg = errorJson.error;
                                 }
                             } catch (e) {
-                                // JSON parsing failed, just use the text body if it's not HTML
                                 if (text && text.trim().charAt(0) !== '<') {
-                                    errorMsg = text; // Use the raw text if it's not HTML
+                                    errorMsg = text;
                                 }
                                 console.error("Failed to parse error JSON, using fallback.");
                             }
@@ -194,35 +197,91 @@ upload.modules.addmodule({
                     }
                 })
                 .then(function(responseBlob) {
-                    // 4. SUCCESS: Stop the loop, hide modal, and decrypt
                     if(window.stopFaceScan) window.stopFaceScan();
                     self.cache(seed, responseBlob);
                     self.tryDecrypt(responseBlob, seed, progress, done, null);
                 })
                 .catch(function(err) {
-                    // 5. FAILURE: Log error and call this function again
                     var errorMsg = err.message || "Face verification failed. Please try again.";
                     console.error("Face verification failed:", errorMsg, (err.data || ''));
-                    
-                    // RECURSIVE CALL: Re-open the modal with the error message.
-                    // This creates a new promise that the loop will listen to.
                     attemptVerification(errorMsg); 
                 });
 
             }).fail(function(err) {
-                // User clicked "Cancel" on the face modal
                 console.log("Face scan cancelled by user.", err);
                 progress('cancelled');
             });
         }
 
-        // Start the verification loop for the first time
+        attemptVerification(null);
+    },
+    
+    handleTOTPAuthDownload: function(identResult, seed, progress, done) {
+        var self = this;
+        if (typeof window.getTOTPCode !== 'function') {
+            console.error("TOTP prompt function (window.getTOTPCode) not found.");
+            progress('error');
+            return;
+        }
+        
+        function attemptVerification(errorMsg) {
+            progress('waiting_for_totp');
+            
+            window.getTOTPCode(errorMsg).done(function(totpCode) {
+                progress('verifying_totp');
+                
+                fetch('/verify_totp/' + identResult.ident, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ token: totpCode })
+                })
+                .then(function(response) {
+                    if (response.ok) {
+                        return response.blob();
+                    } else {
+                        return response.text().then(function(text) {
+                            var errorMsg = 'TOTP verification failed.';
+                            try {
+                                var errorJson = JSON.parse(text);
+                                if (errorJson && errorJson.error) {
+                                    errorMsg = errorJson.error;
+                                }
+                            } catch (e) {
+                                if (text && text.trim().charAt(0) !== '<') {
+                                    errorMsg = text;
+                                }
+                            }
+                            var err = new Error(errorMsg);
+                            err.data = { status: response.status, body: text };
+                            throw err;
+                        });
+                    }
+                })
+                .then(function(responseBlob) {
+                    if(window.stopTOTPPrompt) window.stopTOTPPrompt();
+                    self.cache(seed, responseBlob);
+                    self.tryDecrypt(responseBlob, seed, progress, done, null);
+                })
+                .catch(function(err) {
+                    var errorMsg = err.message || "TOTP verification failed. Please try again.";
+                    console.error("TOTP verification failed:", errorMsg, (err.data || ''));
+                    attemptVerification(errorMsg);
+                });
+
+            }).fail(function(err) {
+                console.log("TOTP verification cancelled by user.", err);
+                progress('cancelled');
+            });
+        }
+
         attemptVerification(null);
     },
 
-    upload: function (blob, progress, done, password, encryptedFace) {
+    upload: function (blob, progress, done, password, twoFAData) {
         crypt.encrypt(blob, blob.name, password)
-            .done(this.encrypted.bind(this, progress, done, encryptedFace))
+            .done(this.encrypted.bind(this, progress, done, twoFAData))
             .done(this.cacheresult.bind(this))
             .progress(progress)
             .fail(function(err) {
