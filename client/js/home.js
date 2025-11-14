@@ -38,9 +38,9 @@ upload.modules.addmodule({
                         </div>
                         <div id="expiry_error_msg" class="password-error-global" style="min-height: 1.2em;"></div>
                     </div>
-                    <div class="modal-footer border-0 d-flex">
-                        <button type="button" id="cancel_upload_start" class="btn cancel-btn w-100 me-2" data-bs-dismiss="modal">Cancel</button>
+                    <div class="modal-footer border-0 d-flex gap-2">
                         <button type="button" id="continue_from_expiry" class="btn btn-primary w-100">Continue</button>
+                        <button type="button" id="cancel_upload_start" class="btn cancel-btn w-100" data-bs-dismiss="modal">Cancel</button>
                     </div>
                 </div>
             </div>
@@ -56,8 +56,8 @@ upload.modules.addmodule({
                              <div id="upload_password_error_msg" class="password-error-global" style="min-height: 1.2em;"></div>
                         </div>
                         <div class="modal-footer border-0 d-flex">
-                            <button type="button" id="back_to_expiry" class="btn cancel-btn w-100 me-2">Back</button>
                             <button type="submit" class="btn btn-primary w-100" id="upload_submit_btn">Continue</button>
+                            <button type="button" id="back_to_expiry" class="btn cancel-btn w-100">Back</button>
                         </div>
                     </form>
                 </div>
@@ -92,8 +92,8 @@ upload.modules.addmodule({
                         <div id="face_modal_error_msg" class="password-error-global mt-2" style="min-height: 1.2em;"></div>
                     </div>
                     <div class="modal-footer border-0 d-flex">
-                        <button type="button" id="back_from_face_btn" class="btn cancel-btn w-100 me-2">Back</button>
                         <button type="button" class="btn btn-primary w-100" id="capture_face_btn">Capture & Encrypt</button>
+                        <button type="button" id="back_from_face_btn" class="btn cancel-btn w-100">Back</button>
                     </div>
                 </div>
             </div>
@@ -116,8 +116,8 @@ upload.modules.addmodule({
                         <div id="totp_modal_error_msg" class="password-error-global" style="min-height: 1.2em;"></div>
                     </div>
                     <div class="modal-footer border-0 d-flex">
-                        <button type="button" id="back_from_totp_btn" class="btn cancel-btn w-100 me-2">Back</button>
                         <button type="button" class="btn btn-primary w-100" id="verify_totp_btn">Verify & Encrypt</button>
+                        <button type="button" id="back_from_totp_btn" class="btn cancel-btn w-100">Back</button>
                     </div>
                 </div>
             </div>

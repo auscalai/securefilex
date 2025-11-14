@@ -88,8 +88,8 @@ upload.modules.addmodule({
                             <div id="password_error_msg" class="password-error-global mt-2" style="min-height: 1.2em;"></div>
                         </div>
                         <div class="modal-footer border-0 d-flex">
-                            <button type="button" class="btn cancel-btn w-100 me-2" data-bs-dismiss="modal">Cancel</button>
                             <button type="button" id="submit_decryption_password" class="btn btn-primary w-100">Decrypt</button>
+                            <button type="button" class="btn cancel-btn w-100" data-bs-dismiss="modal">Cancel</button>
                         </div>
                     </div>
                 </div>
@@ -121,8 +121,8 @@ upload.modules.addmodule({
                             <div id="download_face_error_msg" class="password-error-global mt-2" style="min-height: 1.2em;"></div>
                         </div>
                         <div class="modal-footer border-0 d-flex">
-                            <button type="button" class="btn cancel-btn w-100 me-2" data-bs-dismiss="modal">Cancel</button>
-                            <button type="button" class="btn btn-primary w-100" id="download_capture_face_btn">Verify My Face</button>
+                            <button type="button" class="btn btn-primary w-100" id="download_capture_face_btn">Verify My Face</button>                        
+                            <button type="button" class="btn cancel-btn w-100" data-bs-dismiss="modal">Cancel</button>
                         </div>
                     </div>
                 </div>
@@ -167,8 +167,8 @@ upload.modules.addmodule({
                             <div id="download_totp_error_msg" class="password-error-global" style="min-height: 1.2em;"></div>
                         </div>
                         <div class="modal-footer border-0 d-flex">
-                            <button type="button" class="btn cancel-btn w-100 me-2" data-bs-dismiss="modal">Cancel</button>
                             <button type="button" id="download_verify_totp_btn" class="btn btn-primary w-100">Verify Code</button>
+                            <button type="button" class="btn cancel-btn w-100" data-bs-dismiss="modal">Cancel</button>
                         </div>
                     </div>
                 </div>
