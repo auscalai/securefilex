@@ -26,20 +26,25 @@ upload.modules.addmodule({
         blob.name = this.current.find('#create_filename').val();
         console.log('[textpaste.js] Memo blob created:', blob);
         
+        // Store the closeback before removing UI
+        var closeback = this.closeback;
+        
         this.current.remove();
         console.log('[textpaste.js] Editor UI removed.');
         
-        if (this.closeback) {
-            console.log('[textpaste.js] Executing closeback to restore home UI.');
-            this.closeback();
-        } else {
-            console.error('[textpaste.js] FATAL: closeback function not found!');
-        }
-        
         this.cleanup();
         
-        console.log('[textpaste.js] Calling upload.home.doupload().');
-        upload.home.doupload(blob);
+        // Execute closeback FIRST to restore home UI
+        if (closeback) {
+            console.log('[textpaste.js] Executing closeback to restore home UI.');
+            closeback();
+        }
+        
+        // Small delay to ensure UI is ready before starting upload
+        setTimeout(() => {
+            console.log('[textpaste.js] Calling upload.home.doupload().');
+            upload.home.doupload(blob);
+        }, 50);
     },
     cleanup: function() {
       console.log('[textpaste.js] Cleaning up module state.');
@@ -58,20 +63,35 @@ upload.modules.addmodule({
     render: function(view, filename, data, mime, closeback) {
         console.log('[textpaste.js] Rendering memo editor.');
         
-        // --- THE FIX IS HERE: The root element is now a <form> tag ---
         var template = `
             <form id="textview" class="d-flex flex-column vh-100">
-                <nav class="navbar navbar-expand-lg navbar-dark p-2" style="background-color: var(--card-bg);">
+                <nav class="navbar navbar-expand-lg navbar-dark memo-navbar">
                     <div class="container-fluid">
-                        <input id="create_filename" type="text" class="form-control w-auto" value="${filename}">
-                        <div class="ms-auto">
-                            <button type="button" id="retbtn" class="btn cancel-btn me-2">Go Back</button>
-                            <button type="submit" class="btn btn-primary">Save & Encrypt</button>
+                        <div class="d-flex align-items-center flex-grow-1">
+                            <i class="bi bi-file-text-fill me-2" style="font-size: 1.5rem; color: var(--primary-glow);"></i>
+                            <input id="create_filename" type="text" class="form-control memo-filename-input" value="${filename}" placeholder="Enter filename...">
+                        </div>
+                        <div class="ms-auto d-flex gap-2">
+                            <button type="button" id="retbtn" class="btn cancel-btn">
+                                <i class="bi bi-arrow-left me-2"></i>Go Back
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-lock-fill me-2"></i>Save & Encrypt
+                            </button>
                         </div>
                     </div>
                 </nav>
                 <div id="create_text" class="memo-editor-area flex-grow-1 position-relative">
-                    <textarea class="memo-editor-textarea"></textarea>
+                    <div class="memo-editor-wrapper">
+                        <textarea class="memo-editor-textarea" placeholder="Start typing your memo..." spellcheck="true"></textarea>
+                        <div class="memo-editor-stats">
+                            <span id="char-count">0 characters</span>
+                            <span class="separator">•</span>
+                            <span id="word-count">0 words</span>
+                            <span class="separator">•</span>
+                            <span id="line-count">1 line</span>
+                        </div>
+                    </div>
                 </div>
                 <input type="hidden" id="create_mime" value="${mime}">
             </form>
@@ -84,5 +104,20 @@ upload.modules.addmodule({
         var area = this.current.find('textarea');
         area.val(data).focus()[0].setSelectionRange(0, 0);
         area.scrollTop(0);
+        
+        // Add character/word/line counter
+        this.updateStats(area);
+        area.on('input', () => this.updateStats(area));
+    },
+    
+    updateStats: function(textarea) {
+        var text = textarea.val();
+        var chars = text.length;
+        var words = text.trim() ? text.trim().split(/\s+/).length : 0;
+        var lines = text.split('\n').length;
+        
+        this.current.find('#char-count').text(`${chars} character${chars !== 1 ? 's' : ''}`);
+        this.current.find('#word-count').text(`${words} word${words !== 1 ? 's' : ''}`);
+        this.current.find('#line-count').text(`${lines} line${lines !== 1 ? 's' : ''}`);
     }
 });

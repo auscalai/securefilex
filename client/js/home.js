@@ -217,7 +217,31 @@ upload.modules.addmodule({
     triggerfocuspaste: function(e) { if (e.which != 1) return; if (e.target == document.body && this._ && !this._.pastearea.hasClass('d-none')) { e.preventDefault(); this.focuspaste() } },
     
     initroute: function () {
-        this.focuspaste(); 
+        // Check if we were sent here from the "Edit Memo" button
+        if (upload.pendingMemoData) {
+            const memo = upload.pendingMemoData;
+            // Clear the temporary variable so it doesn't trigger again
+            delete upload.pendingMemoData;
+
+            console.log('[home.js] Detected pendingMemoData, opening editor with:', memo.name);
+
+            // Hide upload area and show editor
+            this._.uploadview.addClass('d-none');
+            this._.newpaste.closest('.topbar').addClass('d-none');
+
+            // Start the text editor with pre-filled data
+            upload.textpaste.render(
+                this._.view, 
+                memo.name, 
+                memo.data, 
+                memo.mime, 
+                this.closepaste.bind(this)
+            );
+        } else {
+            // Normal visit to home page
+            console.log('[home.js] Normal home page load');
+            this.focuspaste(); 
+        }
     },
     
     doupload: function (blob) {
@@ -486,16 +510,27 @@ upload.modules.addmodule({
     },
     
     closepaste: function() {
-      this._.uploadview.removeClass('d-none');
-      this._.newpaste.closest('.topbar').removeClass('d-none');
+        console.log('[home.js] closepaste called - restoring upload view');
+        this._.uploadview.removeClass('d-none');
+        this._.newpaste.closest('.topbar').removeClass('d-none');
+        // Make sure we focus the paste catcher
+        this.focuspaste();
     },
-    dopasteupload: function (data) {
+    dopasteupload: function (data, filename) {
+        console.log('[home.js] dopasteupload called with filename:', filename);
         this._.uploadview.addClass('d-none');
         this._.newpaste.closest('.topbar').addClass('d-none');
-        upload.textpaste.render(this._.view, 'Untitled-Memo.txt', data, 'text/plain', this.closepaste.bind(this));
+        // Render the text editor
+        upload.textpaste.render(
+            this._.view, 
+            filename || 'Untitled-Memo.txt', 
+            data, 
+            'text/plain', 
+            this.closepaste.bind(this)
+    );
     },
     newpaste: function() { 
-        this.dopasteupload('') 
+        this.dopasteupload('', 'Untitled-Memo.txt');
     },
     pasted: function(e) {
         if (!this._ || this._.pastearea.hasClass('d-none')) return;

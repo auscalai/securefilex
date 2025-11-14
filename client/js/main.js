@@ -58,53 +58,59 @@
       }
   }
   upload.modules.addmodule({
-      name: 'route',
-      init: function () {
-          window.addEventListener('hashchange', this.hashchange.bind(this))
-      },
-      setroute: function (module, routeroot, route) {
-          var view = $('.modulecontent.modulearea')
-          if (!this.currentmodule || this.currentmodule != module) {
-              if (this.currentmodule) {
-                  this.currentmodule.unrender()
-              }
-              this.currentmodule = module
-              view.id = 'module_' + module.name
-              module.render(view)
-          }
-          if (module.initroute) {
+    name: 'route',
+    init: function () {
+        window.addEventListener('hashchange', this.hashchange.bind(this))
+    },
+    setroute: function (module, routeroot, route) {
+        var view = $('.modulecontent.modulearea')
+        if (!this.currentmodule || this.currentmodule != module) {
+            if (this.currentmodule) {
+                this.currentmodule.unrender()
+            }
+            this.currentmodule = module
+            view.id = 'module_' + module.name
+            module.render(view)
+        }
+        if (module.initroute) {
             module.initroute(route, routeroot)
-          }
-      },
-      tryroute: function (route) {
-          var isroot = route.startsWith('/')
-          var normalroute = isroot ? route.substring(1) : route
-          var route = normalroute.substr(normalroute.indexOf('/') + 1)
-          var routeroot = normalroute.substr(0, normalroute.indexOf('/'))
-          var chosenmodule
-          if (!normalroute) {
-              chosenmodule = upload.modules.default
-          } else {
-              upload.modules.modules.every(function (module) {
-                  if (!module.route) {
-                      return true
-                  }
-                  if (module.route(routeroot, route)) {
-                      chosenmodule = module
-                      return false
-                  }
-                  return true
-              })
-          }
-          if (!chosenmodule) {
-              chosenmodule = upload.modules.default
-          }
-          setTimeout(this.setroute.bind(this, chosenmodule, routeroot, route), 0)
-      },
-      hashchange: function () {
-          this.tryroute(window.location.hash.substring(1))
-      }
-  })
+        }
+    },
+    tryroute: function (route) {
+        var isroot = route.startsWith('/')
+        var normalroute = isroot ? route.substring(1) : route
+        var route = normalroute.substr(normalroute.indexOf('/') + 1)
+        var routeroot = normalroute.substr(0, normalroute.indexOf('/'))
+        var chosenmodule
+        
+        // Special handling for #edit route - always go to home
+        if (normalroute === 'edit' || routeroot === 'edit') {
+            console.log('[route] Detected #edit route, routing to home');
+            chosenmodule = upload.home;
+        } else if (!normalroute) {
+            chosenmodule = upload.modules.default
+        } else {
+            upload.modules.modules.every(function (module) {
+                if (!module.route) {
+                    return true
+                }
+                if (module.route(routeroot, route)) {
+                    chosenmodule = module
+                    return false
+                }
+                return true
+            })
+        }
+        
+        if (!chosenmodule) {
+            chosenmodule = upload.modules.default
+        }
+        setTimeout(this.setroute.bind(this, chosenmodule, routeroot, route), 0)
+    },
+    hashchange: function () {
+        this.tryroute(window.location.hash.substring(1))
+    }
+    })
 }(window.upload));
 (function () {
     upload.load.needsome()

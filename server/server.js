@@ -62,12 +62,25 @@ function handle_upload(req, res) {
             if (ident_exists(fields.ident)) return res.status(409).json({error: "Ident is already taken.", code: 4});
             
             var delhmac = crypto.createHmac('sha256', config.delete_key).update(fields.ident).digest('hex');
-            fs.rename(tmpfname, ident_path(fields.ident), (err) => {
-                if (err) {
-                     console.error("Error renaming file:", err);
+            const finalPath = ident_path(fields.ident); // Store final path
+            fs.rename(tmpfname, finalPath, (renameErr) => {
+                if (renameErr) {
+                     console.error("Error renaming file:", renameErr);
                      return res.status(500).send("Internal Server Error");
                 }
-                res.json({delkey: delhmac});
+                // --- START OF FIX ---
+                // Verify the file exists at its new location before responding.
+                // This prevents a race condition where the client is redirected
+                // before the file is available to be served.
+                fs.stat(finalPath, (statErr) => {
+                    if (statErr) {
+                        console.error(`File not available after rename for ident ${fields.ident}:`, statErr);
+                        return res.status(500).send("Internal Server Error");
+                    }
+                    // File is confirmed to exist, now respond to the client.
+                    res.json({delkey: delhmac});
+                });
+                // --- END OF FIX ---
             });
         } catch (err) {
             console.error("Error in busboy finish:", err);

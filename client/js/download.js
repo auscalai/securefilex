@@ -332,54 +332,83 @@ upload.modules.addmodule({
       ele.find('.line').each(function(i, e) { $(e).prepend($('<span>').addClass('linenum').text(i + 1)) });
     },
     downloaded: function (data) {
-        $('.modal').modal('hide');
-        this._.filename.text(data.header.name).show();
-        this._.title.text(data.header.name + ' - SecureFile Locker');
-        var stored = localStorage.getItem('delete-' + data.ident);
-        if (stored && !isiframed()) {
-            this._.deletebtn.show().prop('href', (upload.config.server || '') + 'del?delkey=' + stored + '&ident=' + data.ident);
+            $('.modal').modal('hide');
+            this._.filename.text(data.header.name).show();
+            this._.title.text(data.header.name + ' - SecureFile Locker');
+            var stored = localStorage.getItem('delete-' + data.ident);
+            if (stored && !isiframed()) {
+                this._.deletebtn.show().prop('href', (upload.config.server || '') + 'del?delkey=' + stored + '&ident=' + data.ident);
+            }
+            this._.newupload.show();
+            var association = this.getassociation(data.header.mime);
+            var decrypted = new Blob([data.decrypted], { type: data.header.mime });
+            var url = URL.createObjectURL(decrypted);
+            this._.viewbtn.prop('href', url).hide();
+            this._.dlbtn.prop('href', url).prop('download', data.header.name);
+            delete this._.content;
+            this._.detailsarea.empty();
+            if (!!association) {
+                this._.viewbtn.show();
+            }
+            if (association == 'image' || association == 'svg') {
+                $('<div>').prop('id', 'previewimg').addClass('preview').appendTo(this._.detailsarea).html($('<img>').addClass('img-fluid rounded shadow-lg').prop('src', url));
+            } else if (association == 'text') {
+                this._.detailsarea.removeClass('d-flex justify-content-center align-items-center text-center p-3').css('padding', '0');
+                var textContainer = $('<div>')
+                    .addClass('memo-editor-area flex-grow-1 position-relative')
+                    .css({ 'height': '100%' }) // Ensure it fills the vertical space
+                    .appendTo(this._.detailsarea);
+
+                var wrapper = $('<div>')
+                    .addClass('memo-editor-wrapper')
+                    .appendTo(textContainer);
+
+                var textarea = $('<textarea>')
+                    .addClass('memo-editor-textarea')
+                    .prop('readonly', true) // This is a view page, so make it read-only
+                    .appendTo(wrapper);
+
+                var fr = new FileReader();
+                fr.onload = () => {
+                    // This._.text is used by the 'Edit Memo' button, so we must keep it
+                    this._.text = { header: data.header, data: fr.result };
+                    textarea.val(fr.result); // Populate the textarea with the memo content
+                    this._.editpaste.removeClass('d-none'); // Show the 'Edit Memo' button
+                };
+                fr.readAsText(data.decrypted);
+            } else if (association == 'video') {
+                $('<div>').addClass('preview').appendTo(this._.detailsarea).html($('<video>').prop({controls:true, autoplay:true, src:url}).addClass('w-100 rounded shadow-lg'));
+            } else if (association == 'audio') {
+                $('<div>').addClass('preview').appendTo(this._.detailsarea).html($('<audio>').prop({controls:true, autoplay:true, src:url}));
+            } else {
+                $('<div>').addClass('downloadexplain text-white-50').html(`<h3>Ready to Download</h3><p>Click the Download button below. This locker self-destructs after its expiration time.</p>`).appendTo(this._.detailsarea);
+            }
+            this._.btns.show();
+        },
+        closepaste: function() {
+          this._.dlarea.show();
+        },
+        editpaste: function() {
+        console.log('[download.js] Edit Memo clicked');
+        console.log('[download.js] Current text data:', this._.text);
+        
+        if (!this._.text || !this._.text.data) {
+            console.error('[download.js] No text data available to edit!');
+            return;
         }
-        this._.newupload.show();
-        var association = this.getassociation(data.header.mime);
-        var decrypted = new Blob([data.decrypted], { type: data.header.mime });
-        var url = URL.createObjectURL(decrypted);
-        this._.viewbtn.prop('href', url).hide();
-        this._.dlbtn.prop('href', url).prop('download', data.header.name);
-        delete this._.content;
-        this._.detailsarea.empty();
-        if (!!association) {
-            this._.viewbtn.show();
-        }
-        if (association == 'image' || association == 'svg') {
-            $('<div>').prop('id', 'previewimg').addClass('preview').appendTo(this._.detailsarea).html($('<img>').addClass('img-fluid rounded shadow-lg').prop('src', url));
-        } else if (association == 'text') {
-            var textcontent = $('<div>').prop('id', 'downloaded_text').addClass('preview w-100 h-100').appendTo(this._.detailsarea);
-            var pre = $('<pre>').addClass('w-100 h-100').appendTo(textcontent);
-            var code = $('<code>').appendTo(pre);
-            var fr = new FileReader();
-            fr.onload = () => {
-                this._.text = { header: data.header, data: fr.result };
-                code.text(fr.result);
-                if (window.hljs) hljs.highlightBlock(code[0]);
-                this.setupLineNumbers(code);
-            };
-            fr.readAsText(data.decrypted);
-            this._.editpaste.removeClass('d-none');
-        } else if (association == 'video') {
-            $('<div>').addClass('preview').appendTo(this._.detailsarea).html($('<video>').prop({controls:true, autoplay:true, src:url}).addClass('w-100 rounded shadow-lg'));
-        } else if (association == 'audio') {
-            $('<div>').addClass('preview').appendTo(this._.detailsarea).html($('<audio>').prop({controls:true, autoplay:true, src:url}));
-        } else {
-            $('<div>').addClass('downloadexplain text-white-50').html(`<h3>Ready to Download</h3><p>Click the Download button below. This locker self-destructs after its expiration time.</p>`).appendTo(this._.detailsarea);
-        }
-        this._.btns.show();
-    },
-    closepaste: function() {
-      this._.dlarea.show();
-    },
-    editpaste: function() {
-      this._.dlarea.hide();
-      upload.textpaste.render(this._.view, this._.text.header.name, this._.text.data, this._.text.header.mime, this.closepaste.bind(this));
+
+        // Store the memo data globally so home.js can pick it up
+        upload.pendingMemoData = {
+            name: this._.text.header.name,
+            data: this._.text.data,
+            mime: this._.text.header.mime || 'text/plain'
+        };
+
+        console.log('[download.js] Stored pendingMemoData:', upload.pendingMemoData);
+        console.log('[download.js] Navigating to #edit');
+
+        // Navigate to home page (which will trigger edit mode)
+        window.location.hash = '#edit';
     },
     progress: function (e) {
         if (!this._.content || !this._.content.loading) return;

@@ -193,3 +193,8 @@ body, html {
     border: 1px solid var(--primary-glow);
     box-shadow: 0 0 10px var(--primary-glow);
 }
+
+#dlarea .topbar {
+    position: static; /* Overrides the 'position: fixed' rule */
+    flex-shrink: 0;   /* Prevents the top bar from shrinking */
+}
