@@ -162,7 +162,6 @@ upload.modules.addmodule({
         this._.uploadview = view.find('#uploadview');
         this._.progress = { main: view.find('#uploadprogress'), type: view.find('#progresstype'), amount: view.find('#progressamount'), bg: view.find('#progressamountbg') };
         
-        // Modal elements
         this._.expiryModal = new bootstrap.Modal(view.find('#expiry_modal_overlay')[0]);
         this._.expiryCard = $(this._.expiryModal._element).find('.modal-content')[0];
         this._.expiryValue = view.find('#expiry_value');
@@ -188,12 +187,13 @@ upload.modules.addmodule({
         this._.totpVerifyInput = view.find('#totp_verify_input');
         this._.totpErrorMsg = view.find('#totp_modal_error_msg');
         
-        this.webcam = new Webcam(view.find('#face_webcam')[0], 'user', view.find('#face_canvas')[0]); 
         $('#footer').show();
     },
     unrender: function() {
-        if (this.webcam) this.webcam.stop();
-        // Disposing modals is good practice for cleanup
+        if (this.webcam) {
+            this.webcam.stop();
+            this.webcam = null;
+        }
         ['expiryModal', 'passwordmodal', 'twofaChoiceModal', 'facemodal', 'totpmodal'].forEach(modalKey => {
             if (this._[modalKey] && this._[modalKey].dispose) {
                 this._[modalKey].dispose();
@@ -201,6 +201,8 @@ upload.modules.addmodule({
         });
         delete this._;
     },
+    
+    // --- ALL MISSING FUNCTIONS RESTORED ---
     dragleave: function (e) { e.preventDefault(); e.stopPropagation(); this._.pastearea.removeClass('dragover') },
     drop: function (e) { e.preventDefault(); this._.pastearea.removeClass('dragover'); if (e.originalEvent.dataTransfer.files.length > 0) this.doupload(e.originalEvent.dataTransfer.files[0]) },
     dragover: function (e) { e.preventDefault(); this._.pastearea.addClass('dragover') },
@@ -209,6 +211,7 @@ upload.modules.addmodule({
     initpastecatcher: function () { this.pastecatcher = $('<pre>').prop('id', 'pastecatcher').prop('contenteditable', true).css({position:'absolute', top: '-9999px'}).appendTo('body') },
     focuspaste: function () { if (this.pastecatcher) setTimeout(() => this.pastecatcher.focus(), 100) },
     triggerfocuspaste: function(e) { if (e.which != 1) return; if (e.target == document.body && this._ && !this._.pastearea.hasClass('d-none')) { e.preventDefault(); this.focuspaste() } },
+    
     initroute: function () {
         if (upload.pendingMemoData) {
             const memo = upload.pendingMemoData;
@@ -296,24 +299,52 @@ upload.modules.addmodule({
     backFrom2FA: function() {
         const active2FAModal = this._.facemodal._isShown ? this._.facemodal : (this._.totpmodal._isShown ? this._.totpmodal : null);
         if (active2FAModal) {
-            if (active2FAModal === this._.facemodal) this.webcam.stop();
+            if (active2FAModal === this._.facemodal && this.webcam) {
+                this.webcam.stop();
+                this.webcam = null;
+            }
             $(active2FAModal._element).one('hidden.bs.modal', () => this._.twofaChoiceModal.show());
             active2FAModal.hide();
         }
     },
     startFaceModal: function() {
-        this._.faceSpinner.addClass('d-none');
-        this._.faceErrorMsg.text('');
         this._.facemodal.show();
-        this.webcam.start().catch(err => this._.faceErrorMsg.text("Could not start webcam. Please allow camera access."));
+        const videoElement = document.getElementById('face_webcam');
+        const canvasElement = document.getElementById('face_canvas');
+        const errorMsg = this._.faceErrorMsg;
+
+        errorMsg.text('');
+        
+        this.webcam = new Webcam(videoElement, 'user', canvasElement);
+
+        videoElement.addEventListener('loadedmetadata', () => {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+        }, { once: true });
+
+        this.webcam.start({ width: { ideal: 4096 }, height: { ideal: 2160 } })
+            .catch(err => errorMsg.text("Could not start webcam. Please allow camera access."));
     },
     captureFace: function() {
-        const faceDataUri = this.webcam.snap();
-        if (!faceDataUri) {
+        const videoElement = document.getElementById('face_webcam');
+        const canvasElement = document.getElementById('face_canvas');
+        
+        if (!this.webcam || videoElement.readyState < 2) {
+            this._.faceErrorMsg.text("Webcam is not ready. Please wait.");
+            this.shakeModal(this._.faceCard);
+            return;
+        }
+
+        const context = canvasElement.getContext('2d');
+        context.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+        const faceDataUri = canvasElement.toDataURL('image/png');
+        
+        if (!faceDataUri || faceDataUri.length < 100) {
             this._.faceErrorMsg.text("Failed to capture image. Please try again.");
             this.shakeModal(this._.faceCard);
             return;
         }
+
         this._.faceSpinner.removeClass('d-none');
         this._.faceErrorMsg.text('');
         $.get('/public_key')
@@ -365,12 +396,12 @@ upload.modules.addmodule({
                         .fail(() => this._.totpErrorMsg.text("Error: Could not contact server."));
                 } else {
                     this._.totpErrorMsg.text("Invalid code. Please try again.");
-                    this.shakeModal(this._.totpCard); // <-- RESTORED SHAKE
+                    this.shakeModal(this._.totpCard);
                 }
             },
             error: () => {
                 this._.totpErrorMsg.text("Verification failed. Please try again.");
-                this.shakeModal(this._.totpCard); // <-- RESTORED SHAKE
+                this.shakeModal(this._.totpCard);
             }
         });
     },

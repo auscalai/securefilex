@@ -252,41 +252,34 @@ function create_app(config) {
             // Use a different name for the original image to avoid shadowing
             const { fileStats, decryptedSecret: originalFaceDataUri, dataLength } = await get2FAProtectedFile(ident, 'FACE');
             
-            // --- NEW DEBUGGING LOGS ---
-            console.log(`[Verify Face ${ident}] Original Face URI (end): ...${originalFaceDataUri.slice(-50)}`);
-            console.log(`[Verify Face ${ident}] New Face URI (end):      ...${newFaceDataUri.slice(-50)}`);
-            
             const deepFacePayload = {
-                "img1": originalFaceDataUri, // The original face from the file
-                "img2": newFaceDataUri,      // The new face from the user
-                "model_name": "Facenet", 
+                "img1": originalFaceDataUri,
+                "img2": newFaceDataUri,
+                "model_name": "Facenet",
                 "detector_backend": "opencv",
-                "distance_metric": "cosine", 
-                "anti_spoofing": true
+                "distance_metric": "cosine",
+                "anti_spoofing": true,
+                "align": true,
+                "enforce_detection": true
             };
 
             request.post({ url: 'http://localhost:5000/verify', json: deepFacePayload, timeout: 10000 }, (err, _, body) => {
                 if (err) {
-                    console.error(`[Verify Face ${ident}] Error calling DeepFace:`, err);
                     return res.status(500).json({ error: "Verification server error." });
                 }
                 if (body?.error) {
                     let userError = body.error.includes("Spoof detected") ? "Spoof detected." : "Face could not be detected.";
-                    console.warn(`[Verify Face ${ident}] DeepFace error:`, userError);
                     return res.status(403).json({ error: userError });
                 }
                 if (body?.verified === true) {
-                    console.log(`[Verify Face ${ident}] SUCCESS: Faces matched.`);
                     const mainFileSize = fileStats.size - 8 - dataLength;
                     res.setHeader('Content-Type', 'application/octet-stream');
                     fs.createReadStream(ident_path(ident), { end: mainFileSize - 1 }).pipe(res);
                 } else {
-                    console.warn(`[Verify Face ${ident}] FAILURE: Faces did not match.`, body);
                     res.status(403).json({ error: "Face does not match." });
                 }
             });
         } catch (error) {
-            console.error(`[Verify Face ${ident}] Critical error:`, error.message);
             res.status(500).json({ error: "Failed to process face verification." });
         }
     });
@@ -308,7 +301,6 @@ function create_app(config) {
                 res.status(403).json({ error: "Invalid TOTP code." });
             }
         } catch (error) {
-            console.error("TOTP verification error:", error.message);
             res.status(500).json({ error: "Failed to process TOTP verification." });
         }
     });
