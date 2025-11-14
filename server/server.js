@@ -1,189 +1,60 @@
-var crypto = require('crypto');
-var fs = require('fs');
-var path = require('path');
-var vm = require('vm');
-var schedule = require('node-schedule'); // <-- ADD THIS
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const schedule = require('node-schedule');
+const Busboy = require('busboy');
+const express = require('express');
+const http = require('http');
+const https = require('https');
+const request = require('request');
+const tmp = require('tmp');
+const speakeasy = require('speakeasy');
+const QRCode = require('qrcode');
 
 try {
     const sjclPath = require.resolve('sjcl');
-    const sjclFileContent = fs.readFileSync(sjclPath, 'utf8');
-    vm.runInThisContext(sjclFileContent);
+    vm.runInThisContext(fs.readFileSync(sjclPath, 'utf8'));
     global.sjcl = sjcl;
     require('sjcl/core/random.js');
     require('sjcl/core/codecHex.js');
     require('sjcl/core/bn.js');
     require('sjcl/core/ecc.js');
 } catch (e) {
-    console.error("CRITICAL: Failed to load 'sjcl/core' modules.", e.message);
+    console.error("CRITICAL: Failed to load 'sjcl' modules.", e.message);
     process.exit(1);
 }
 
-var Busboy = require('busboy');
-var express = require('express');
-var http = require('http');
-var https = require('https');
-var request = require('request');
-var tmp = require('tmp');
-var speakeasy = require('speakeasy');
-var QRCode = require('qrcode');
+// --- Path Helpers ---
+const ident_path = (ident) => path.join(__dirname, '../i/', path.basename(ident));
+const meta_path = (ident) => path.join(__dirname, '../meta/', `${path.basename(ident)}.json`);
+const ident_exists = (ident) => fs.existsSync(ident_path(ident));
 
-function handle_upload(req, res) {
-    var config = req.app.locals.config
-    var busboy = new Busboy({
-        headers: req.headers,
-        limits: { files: 1, parts: 3 }
-    });
-    var fields = {};
-    var tmpfname = null;
-
-    busboy.on('field', (fieldname, value) => fields[fieldname] = value);
-
-    busboy.on('file', (fieldname, file, filename) => {
-        if (fieldname !== 'file') return file.resume();
-        try {
-            var ftmp = tmp.fileSync({ postfix: '.tmp', dir: req.app.locals.config.path.i, keep: true });
-            tmpfname = ftmp.name;
-            var fstream = fs.createWriteStream('', {fd: ftmp.fd, defaultEncoding: 'binary'});
-            file.pipe(fstream);
-        } catch (err) {
-            console.error("Error creating temp file:", err);
-            res.status(500).send("Internal Server Error");
-            req.unpipe(busboy);
-            res.close();
-        }
-    });
-
-    busboy.on('finish', () => {
-        try {
-            if (!tmpfname) return res.status(500).send("Internal Server Error");
-            if (fields.api_key !== config['api_key']) return res.status(403).json({error: "API key doesn't match", code: 2});
-            if (!fields.ident) return res.status(400).json({error: "Ident not provided", code: 11});
-            if (fields.ident.length !== 22) return res.status(400).json({error: "Ident length is incorrect", code: 3});
-            if (ident_exists(fields.ident)) return res.status(409).json({error: "Ident is already taken.", code: 4});
-            
-            var delhmac = crypto.createHmac('sha256', config.delete_key).update(fields.ident).digest('hex');
-            const finalPath = ident_path(fields.ident); // Store final path
-            fs.rename(tmpfname, finalPath, (renameErr) => {
-                if (renameErr) {
-                     console.error("Error renaming file:", renameErr);
-                     return res.status(500).send("Internal Server Error");
-                }
-                // --- START OF FIX ---
-                // Verify the file exists at its new location before responding.
-                // This prevents a race condition where the client is redirected
-                // before the file is available to be served.
-                fs.stat(finalPath, (statErr) => {
-                    if (statErr) {
-                        console.error(`File not available after rename for ident ${fields.ident}:`, statErr);
-                        return res.status(500).send("Internal Server Error");
-                    }
-                    // File is confirmed to exist, now respond to the client.
-                    res.json({delkey: delhmac});
-                });
-                // --- END OF FIX ---
-            });
-        } catch (err) {
-            console.error("Error in busboy finish:", err);
-            res.status(500).send("Internal Server Error");
-        }
-    });
-    return req.pipe(busboy);
-};
-
-function handle_delete(req, res) {
-    var config = req.app.locals.config
-    if (!req.query.ident) return res.status(400).json({error: "Ident not provided", code: 11});
-    if (!req.query.delkey) return res.status(400).json({error: "Delete key not provided", code: 12});
-    
-    var delhmac = crypto.createHmac('sha256', config.delete_key).update(req.query.ident).digest('hex');
-
-    if (req.query.ident.length !== 22) return res.status(400).json({error: "Ident length is incorrect", code: 3});
-    if (delhmac !== req.query.delkey) return res.status(403).json({error: "Incorrect delete key", code: 10});
-    if (!ident_exists(req.query.ident)) return res.status(404).json({error: "Ident does not exist", code: 9});
-
-    fs.unlink(ident_path(req.query.ident), (err) => {
-        if (err) {
-            console.error("Error deleting file:", err);
-            return res.status(500).send("Error deleting file");
-        }
-        // Also delete metadata file if it exists
-        fs.unlink(meta_path(req.query.ident), () => {});
-        cf_invalidate(req.query.ident, config);
-        res.redirect('/');
-    });
-};
-
-function ident_path(ident) {
-    const safeIdent = path.basename(ident);
-    if (safeIdent !== ident) throw new Error("Invalid ident format.");
-    return path.join(__dirname, '../i/', safeIdent);
-}
-
-function meta_path(ident) {
-    const safeIdent = path.basename(ident);
-    if (safeIdent !== ident) throw new Error("Invalid ident format.");
-    return path.join(__dirname, '../meta/', `${safeIdent}.json`);
-}
-
-function ident_exists(ident) {
-    try {
-        fs.lstatSync(ident_path(ident));
-        return true;
-    } catch (err) {
-        return false;
-    }
-}
-
-function cf_do_invalidate(ident, mode, cfconfig) {
-    var inv_url = mode + '://' + cfconfig.url + '/i/' + ident;
-    request.post({
-        url: 'https://www.cloudflare.com/api_json.html',
-        form: { a: 'zone_file_purge', tkn: cfconfig.token, email: cfconfig.email, z: cfconfig.domain, url: inv_url }
-    }, function(err, response, body) {
-        if (err) { return console.warn("Cloudflare invalidation error:", err); }
-        try {
-            var result = JSON.parse(body)
-            if (result.result === 'error') {
-                 console.warn("Cloudflare invalidation failed:", result.msg);
-            }
-        } catch(err) {
-            console.warn("Error parsing Cloudflare response:", body);
-        }
-    });
-}
-
-function cf_invalidate(ident, config) {
-    if (!config['cloudflare-cache-invalidate']) return;
-    var cfconfig = config['cloudflare-cache-invalidate']
-    if (!cfconfig.enabled) return;
-    if (config.http.enabled) cf_do_invalidate(ident, 'http', cfconfig);
-    if (config.https.enabled) cf_do_invalidate(ident, 'https', cfconfig);
-}
-
+// --- ECC Key Management ---
 const keyPairPath = path.join(__dirname, 'ecc_keys.json');
 let eccKeyPair = null;
 
 function getECCKeys() {
     if (eccKeyPair) return eccKeyPair;
     try {
-        const keyData = fs.readFileSync(keyPairPath, 'utf8');
-        const keys = JSON.parse(keyData);
-        const pub = new sjcl.ecc.elGamal.publicKey(sjcl.ecc.curves.c256, sjcl.codec.base64.toBits(keys.pub));
-        const sec = new sjcl.ecc.elGamal.secretKey(sjcl.ecc.curves.c256, sjcl.bn.fromBits(sjcl.codec.hex.toBits(keys.sec)));
-        eccKeyPair = { pub: pub, sec: sec };
+        const keyData = JSON.parse(fs.readFileSync(keyPairPath, 'utf8'));
+        eccKeyPair = {
+            pub: new sjcl.ecc.elGamal.publicKey(sjcl.ecc.curves.c256, sjcl.codec.base64.toBits(keyData.pub)),
+            sec: new sjcl.ecc.elGamal.secretKey(sjcl.ecc.curves.c256, sjcl.bn.fromBits(sjcl.codec.hex.toBits(keyData.sec)))
+        };
         console.log("ECC keys loaded successfully.");
         return eccKeyPair;
     } catch (e) {
         console.warn(`Warning: Could not load ${keyPairPath}. Generating new ECC key pair...`);
-        const keyPair = sjcl.ecc.elGamal.generateKeys(sjcl.ecc.curves.c256);
+        const newKeyPair = sjcl.ecc.elGamal.generateKeys(sjcl.ecc.curves.c256);
         const keysToSave = {
-            pub: sjcl.codec.base64.fromBits(keyPair.pub.get().x.concat(keyPair.pub.get().y)),
-            sec: sjcl.codec.hex.fromBits(keyPair.sec.get())
+            pub: sjcl.codec.base64.fromBits(newKeyPair.pub.get().x.concat(newKeyPair.pub.get().y)),
+            sec: sjcl.codec.hex.fromBits(newKeyPair.sec.get())
         };
         try {
             fs.writeFileSync(keyPairPath, JSON.stringify(keysToSave, null, 2));
             console.log(`New ECC keys saved to ${keyPairPath}`);
-            eccKeyPair = keyPair;
+            eccKeyPair = newKeyPair;
             return eccKeyPair;
         } catch (saveError) {
             console.error("CRITICAL: Failed to save new ECC keys!", saveError);
@@ -192,345 +63,329 @@ function getECCKeys() {
     }
 }
 
-function create_app(config) {
-  var app = express();
-  app.locals.config = config;
-  app.use(express.json({ limit: '5mb' }));
-  app.use(express.urlencoded({ extended: true })); 
-  
-  app.use('', express.static(config.path.client));
-  app.use('/i', express.static(config.path.i));
-  
-  app.post('/up', handle_upload);
-  app.get('/del', handle_delete);
-
-  // START: Modified endpoint with stricter validation
-  app.post('/set_expiry/:ident', (req, res) => {
-      const { ident } = req.params;
-      const { delkey, duration } = req.body;
-      const durationHours = parseFloat(duration); // Use parseFloat for minutes
-      
-      // --- Backend Validation ---
-      const MAX_HOURS = 30 * 24; // 30 days
-      if (!ident || !delkey || isNaN(durationHours) || durationHours <= 0 || durationHours > MAX_HOURS) {
-          return res.status(400).json({ error: "Invalid or missing fields, or duration out of range." });
-      }
-      if (!ident_exists(ident)) {
-          return res.status(404).json({ error: "Ident does not exist." });
-      }
-
-      const expectedDelkey = crypto.createHmac('sha256', config.delete_key).update(ident).digest('hex');
-      if (delkey !== expectedDelkey) {
-          return res.status(403).json({ error: "Invalid delete key." });
-      }
-
-      const now = new Date();
-      const expiresAt = now.getTime() + (durationHours * 60 * 60 * 1000);
-      const metadata = { expiresAt };
-
-      fs.writeFile(meta_path(ident), JSON.stringify(metadata), (err) => {
-          if (err) {
-              console.error("Error writing metadata file:", err);
-              return res.status(500).json({ error: "Could not save expiration data." });
-          }
-          res.status(200).json({ message: "Expiry set successfully." });
-      });
-  });
-
-  app.get('/public_key', (req, res) => {
-    try {
-        const keys = getECCKeys();
-        const pubKeyPoint = keys.pub.get();
-        const pubKeyBase64 = sjcl.codec.base64.fromBits(pubKeyPoint.x.concat(pubKeyPoint.y));
-        res.json({ curve: 'c256', key: pubKeyBase64 });
-    } catch (e) {
-        console.error("Error getting public key:", e);
-        res.status(500).json({ error: "Could not retrieve public key." });
-    }
-  });
-
-  app.get('/generate_totp', (req, res) => {
-    try {
-        const secret = speakeasy.generateSecret({ name: 'SecureFile Locker', length: 32 });
-        QRCode.toDataURL(secret.otpauth_url, (err, dataUrl) => {
-            if (err) {
-                console.error("Error generating QR code:", err);
-                return res.status(500).json({ error: "Could not generate QR code." });
-            }
-            res.json({ secret: secret.base32, qrCode: dataUrl });
-        });
-    } catch (e) {
-        console.error("Error generating TOTP secret:", e);
-        res.status(500).json({ error: "Could not generate TOTP secret." });
-    }
-  });
-
-  app.post('/verify_totp_setup', (req, res) => {
-    try {
-        const { secret, token } = req.body;
-        if (!secret || !token) {
-            return res.status(400).json({ valid: false, error: "Missing secret or token." });
-        }
-        const verified = speakeasy.totp.verify({ secret: secret, encoding: 'base32', token: token, window: 2 });
-        res.json({ valid: verified });
-    } catch (e) {
-        console.error("Error verifying TOTP:", e);
-        res.status(500).json({ valid: false, error: "Verification error." });
-    }
-  });
-
-  app.get('/check_auth_type/:ident', (req, res) => {
-    try {
-        const ident = req.params.ident;
-        if (!ident || ident.length !== 22 || path.basename(ident) !== ident) {
-            return res.status(400).json({ error: "Invalid ident" });
-        }
-        const filePath = ident_path(ident);
-        
-        fs.stat(filePath, (statErr, stats) => {
-            if (statErr || stats.size < 8) {
-                return res.json({ authType: 'none' });
-            }
-            const stream = fs.createReadStream(filePath, { start: stats.size - 8 });
-            let footer = Buffer.alloc(0);
-            stream.on('data', (chunk) => footer = Buffer.concat([footer, chunk]));
-            stream.on('end', () => {
-                if (footer.length === 8) {
-                    const magic = footer.toString('utf8', 0, 4);
-                    if (magic === "FACE") return res.json({ authType: 'face' });
-                    if (magic === "TOTP") return res.json({ authType: 'totp' });
-                }
-                return res.json({ authType: 'none' });
-            });
-            stream.on('error', (err) => {
-                console.error("Error reading file footer:", err);
-                return res.json({ authType: 'none' });
-            });
-        });
-    } catch (e) {
-        res.status(500).json({ authType: 'none', error: "Server error" });
-    }
-  });
-
-  app.post('/verify_face/:ident', (req, res) => {
-    const ident = req.params.ident;
-    const newFaceDataUri = req.body.faceDataUri;
-
-    if (!newFaceDataUri) return res.status(400).json({ verified: false, error: "No face data provided." });
-    if (!ident || ident.length !== 22 || path.basename(ident) !== ident) return res.status(400).json({ verified: false, error: "Invalid ident." });
-
-    const filePath = ident_path(ident);
-    let fileStats, faceDataLength, encryptedFaceJson, originalFaceDataUri;
-
-    try {
-        fileStats = fs.statSync(filePath);
-        const footerBuffer = Buffer.alloc(8);
-        const fd = fs.openSync(filePath, 'r');
-        fs.readSync(fd, footerBuffer, 0, 8, fileStats.size - 8);
-        const magic = footerBuffer.toString('utf8', 0, 4);
-        if (magic !== "FACE") {
-            fs.closeSync(fd);
-            throw new Error("File is not marked for face auth.");
-        }
-        faceDataLength = footerBuffer.readUInt32BE(4);
-        const faceBuffer = Buffer.alloc(faceDataLength);
-        fs.readSync(fd, faceBuffer, 0, faceDataLength, fileStats.size - 8 - faceDataLength);
-        fs.closeSync(fd);
-        encryptedFaceJson = faceBuffer.toString('utf8');
-        originalFaceDataUri = sjcl.decrypt(getECCKeys().sec, encryptedFaceJson);
-    } catch (err) {
-        console.error("Error reading/decrypting face data:", err);
-        return res.status(500).json({ verified: false, error: "Failed to read or decrypt face data." });
-    }
-
-    const deepFacePayload = {
-        "img1": originalFaceDataUri, "img2": newFaceDataUri, "model_name": "Facenet", "detector_backend": "opencv",
-        "distance_metric": "cosine", "anti_spoofing": true, "align": true, "enforce_detection": true
-    };
-
-    request.post({ url: 'http://localhost:5000/verify', json: deepFacePayload, timeout: 10000 }, (err, deepFaceRes, body) => {
-        if (err) {
-            console.error("DeepFace request failed:", err);
-            return res.status(500).json({ verified: false, error: "Verification server error." });
-        }
+function get2FAProtectedFile(ident, expectedMagic) {
+    return new Promise((resolve, reject) => {
         try {
-            if (body && body.error) {
-                console.warn("DeepFace returned an error:", body.error);
-                let userError = "Verification failed. Please try again.";
-                if (body.error.includes("Spoof detected")) userError = "Spoof detected. Please use a live, genuine face.";
-                if (body.error.includes("Face could not be detected")) userError = "Face could not be detected. Please try again.";
-                return res.status(403).json({ verified: false, error: userError });
+            const filePath = ident_path(ident);
+            const fileStats = fs.statSync(filePath);
+            const fd = fs.openSync(filePath, 'r');
+
+            const footerBuffer = Buffer.alloc(8);
+            fs.readSync(fd, footerBuffer, 0, 8, fileStats.size - 8);
+            const magic = footerBuffer.toString('utf8', 0, 4);
+
+            if (magic !== expectedMagic) {
+                fs.closeSync(fd);
+                return reject(new Error(`File is not marked for ${expectedMagic} auth.`));
             }
-            if (body && body.verified === true) {
-                const mainFileEnd = fileStats.size - 8 - faceDataLength;
-                const fileStream = fs.createReadStream(filePath, { start: 0, end: mainFileEnd - 1 });
-                res.setHeader('Content-Type', 'application/octet-stream');
-                fileStream.pipe(res);
-            } else {
-                console.log("DeepFace verification failed (no match):", body);
-                res.status(403).json({ verified: false, error: "Face does not match." });
-            }
-        } catch (e) {
-            console.error("Error parsing DeepFace response:", e, body);
-            res.status(500).json({ verified: false, error: "Invalid verification response." });
+
+            const dataLength = footerBuffer.readUInt32BE(4);
+            const dataBuffer = Buffer.alloc(dataLength);
+            fs.readSync(fd, dataBuffer, 0, dataLength, fileStats.size - 8 - dataLength);
+            fs.closeSync(fd);
+            
+            const encryptedJson = dataBuffer.toString('utf8');
+            const decryptedSecret = sjcl.decrypt(getECCKeys().sec, encryptedJson);
+
+            resolve({ fileStats, decryptedSecret, dataLength });
+        } catch (err) {
+            reject(err);
         }
     });
-  });
+}
 
-  app.post('/verify_totp/:ident', (req, res) => {
-    const ident = req.params.ident;
-    const token = req.body.token;
+// --- Main Application ---
+function create_app(config) {
+    const app = express();
+    app.locals.config = config;
+    app.use(express.json({ limit: '5mb' }));
+    app.use(express.urlencoded({ extended: true }));
+    app.use('', express.static(config.path.client));
+    app.use('/i', express.static(config.path.i));
 
-    if (!token) return res.status(400).json({ verified: false, error: "No TOTP token provided." });
-    if (!ident || ident.length !== 22 || path.basename(ident) !== ident) return res.status(400).json({ verified: false, error: "Invalid ident." });
+    app.post('/up', (req, res) => {
+        const busboy = new Busboy({ headers: req.headers, limits: { files: 1, parts: 3 } });
+        let fields = {};
+        let tmpfname = null;
 
-    const filePath = ident_path(ident);
-    let fileStats, totpDataLength, encryptedTOTPJson, totpSecret;
+        busboy.on('field', (fieldname, value) => fields[fieldname] = value);
 
-    try {
-        fileStats = fs.statSync(filePath);
-        const footerBuffer = Buffer.alloc(8);
-        const fd = fs.openSync(filePath, 'r');
-        fs.readSync(fd, footerBuffer, 0, 8, fileStats.size - 8);
-        const magic = footerBuffer.toString('utf8', 0, 4);
-        if (magic !== "TOTP") {
-            fs.closeSync(fd);
-            throw new Error("File is not marked for TOTP auth.");
+        busboy.on('file', (fieldname, file) => {
+            if (fieldname !== 'file') return file.resume();
+            try {
+                const ftmp = tmp.fileSync({ postfix: '.tmp', dir: config.path.i, keep: true });
+                tmpfname = ftmp.name;
+                file.pipe(fs.createWriteStream('', { fd: ftmp.fd }));
+            } catch (err) {
+                console.error("Error creating temp file:", err);
+                res.status(500).send("Server Error");
+            }
+        });
+
+        busboy.on('finish', () => {
+            if (!tmpfname || fields.api_key !== config['api_key'] || !fields.ident || fields.ident.length !== 22) {
+                return res.status(400).json({ error: "Invalid request parameters." });
+            }
+            if (ident_exists(fields.ident)) {
+                return res.status(409).json({ error: "Ident is already taken." });
+            }
+            
+            const finalPath = ident_path(fields.ident);
+            fs.rename(tmpfname, finalPath, (err) => {
+                if (err) {
+                    console.error("Error renaming file:", err);
+                    return res.status(500).send("Server Error");
+                }
+                fs.stat(finalPath, (statErr) => {
+                    if (statErr) {
+                        console.error(`File not available after rename for ident ${fields.ident}:`, statErr);
+                        return res.status(500).send("Server Error");
+                    }
+                    const delhmac = crypto.createHmac('sha256', config.delete_key).update(fields.ident).digest('hex');
+                    res.json({ delkey: delhmac });
+                });
+            });
+        });
+        req.pipe(busboy);
+    });
+
+    app.get('/del', (req, res) => {
+        const { ident, delkey } = req.query;
+        if (!ident || !delkey || ident.length !== 22) {
+            return res.status(400).json({ error: "Invalid parameters" });
         }
-        totpDataLength = footerBuffer.readUInt32BE(4);
-        const totpBuffer = Buffer.alloc(totpDataLength);
-        fs.readSync(fd, totpBuffer, 0, totpDataLength, fileStats.size - 8 - totpDataLength);
-        fs.closeSync(fd);
-        encryptedTOTPJson = totpBuffer.toString('utf8');
-        totpSecret = sjcl.decrypt(getECCKeys().sec, encryptedTOTPJson);
-    } catch (err) {
-        console.error("Error reading/decrypting TOTP data:", err);
-        return res.status(500).json({ verified: false, error: "Failed to read or decrypt TOTP data." });
-    }
-
-    try {
-        const verified = speakeasy.totp.verify({ secret: totpSecret, encoding: 'base32', token: token, window: 2 });
-        if (verified) {
-            const mainFileEnd = fileStats.size - 8 - totpDataLength;
-            const fileStream = fs.createReadStream(filePath, { start: 0, end: mainFileEnd - 1 });
-            res.setHeader('Content-Type', 'application/octet-stream');
-            fileStream.pipe(res);
-        } else {
-            res.status(403).json({ verified: false, error: "Invalid TOTP code." });
+        
+        const expectedDelkey = crypto.createHmac('sha256', config.delete_key).update(ident).digest('hex');
+        if (delkey !== expectedDelkey) {
+            return res.status(403).json({ error: "Incorrect delete key" });
         }
-    } catch (e) {
-        console.error("Error verifying TOTP:", e);
-        res.status(500).json({ verified: false, error: "TOTP verification error." });
-    }
-  });
-  return app
+        if (!ident_exists(ident)) {
+            return res.status(404).json({ error: "Ident does not exist" });
+        }
+
+        fs.unlink(ident_path(ident), (err) => {
+            if (err) {
+                console.error("Error deleting file:", err);
+                return res.status(500).send("Error deleting file");
+            }
+            fs.unlink(meta_path(ident), () => {});
+            res.redirect('/');
+        });
+    });
+
+    app.post('/set_expiry/:ident', (req, res) => {
+        const { ident } = req.params;
+        const { delkey, duration } = req.body;
+        const durationHours = parseFloat(duration);
+        
+        const MAX_HOURS = 30 * 24;
+        if (!ident || !delkey || isNaN(durationHours) || durationHours <= 0 || durationHours > MAX_HOURS) {
+            return res.status(400).json({ error: "Invalid parameters or duration out of range." });
+        }
+        if (!ident_exists(ident)) {
+            return res.status(404).json({ error: "Ident does not exist." });
+        }
+
+        const expectedDelkey = crypto.createHmac('sha256', config.delete_key).update(ident).digest('hex');
+        if (delkey !== expectedDelkey) {
+            return res.status(403).json({ error: "Invalid delete key." });
+        }
+
+        const expiresAt = Date.now() + (durationHours * 60 * 60 * 1000);
+        fs.writeFile(meta_path(ident), JSON.stringify({ expiresAt }), (err) => {
+            if (err) {
+                console.error("Error writing metadata:", err);
+                return res.status(500).json({ error: "Could not save expiration data." });
+            }
+            res.status(200).json({ message: "Expiry set." });
+        });
+    });
+
+    // --- 2FA Endpoints ---
+    app.get('/public_key', (req, res) => {
+        try {
+            const pubKey = getECCKeys().pub.get();
+            res.json({ key: sjcl.codec.base64.fromBits(pubKey.x.concat(pubKey.y)) });
+        } catch (e) {
+            res.status(500).json({ error: "Could not retrieve public key." });
+        }
+    });
+
+    app.get('/generate_totp', (req, res) => {
+        const secret = speakeasy.generateSecret({ name: 'SecureFile Locker', length: 32 });
+        QRCode.toDataURL(secret.otpauth_url, (err, dataUrl) => {
+            if (err) return res.status(500).json({ error: "Could not generate QR code." });
+            res.json({ secret: secret.base32, qrCode: dataUrl });
+        });
+    });
+
+    app.post('/verify_totp_setup', (req, res) => {
+        const { secret, token } = req.body;
+        const verified = speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 2 });
+        res.json({ valid: verified });
+    });
+
+    app.get('/check_auth_type/:ident', (req, res) => {
+        const filePath = ident_path(req.params.ident);
+        fs.stat(filePath, (err, stats) => {
+            if (err || stats.size < 8) return res.json({ authType: 'none' });
+            
+            const stream = fs.createReadStream(filePath, { start: stats.size - 8 });
+            let footer = Buffer.alloc(0);
+            stream.on('data', chunk => footer = Buffer.concat([footer, chunk]));
+            stream.on('end', () => {
+                const magic = footer.toString('utf8', 0, 4);
+                if (magic === "FACE") return res.json({ authType: 'face' });
+                if (magic === "TOTP") return res.json({ authType: 'totp' });
+                return res.json({ authType: 'none' });
+            });
+            stream.on('error', () => res.json({ authType: 'none' }));
+        });
+    });
+
+    app.post('/verify_face/:ident', async (req, res) => {
+        const { ident } = req.params;
+        const { faceDataUri: newFaceDataUri } = req.body; // Use a distinct name for the new image
+        if (!newFaceDataUri) return res.status(400).json({ error: "No face data provided." });
+
+        try {
+            // Use a different name for the original image to avoid shadowing
+            const { fileStats, decryptedSecret: originalFaceDataUri, dataLength } = await get2FAProtectedFile(ident, 'FACE');
+            
+            // --- NEW DEBUGGING LOGS ---
+            console.log(`[Verify Face ${ident}] Original Face URI (end): ...${originalFaceDataUri.slice(-50)}`);
+            console.log(`[Verify Face ${ident}] New Face URI (end):      ...${newFaceDataUri.slice(-50)}`);
+            
+            const deepFacePayload = {
+                "img1": originalFaceDataUri, // The original face from the file
+                "img2": newFaceDataUri,      // The new face from the user
+                "model_name": "Facenet", 
+                "detector_backend": "opencv",
+                "distance_metric": "cosine", 
+                "anti_spoofing": true
+            };
+
+            request.post({ url: 'http://localhost:5000/verify', json: deepFacePayload, timeout: 10000 }, (err, _, body) => {
+                if (err) {
+                    console.error(`[Verify Face ${ident}] Error calling DeepFace:`, err);
+                    return res.status(500).json({ error: "Verification server error." });
+                }
+                if (body?.error) {
+                    let userError = body.error.includes("Spoof detected") ? "Spoof detected." : "Face could not be detected.";
+                    console.warn(`[Verify Face ${ident}] DeepFace error:`, userError);
+                    return res.status(403).json({ error: userError });
+                }
+                if (body?.verified === true) {
+                    console.log(`[Verify Face ${ident}] SUCCESS: Faces matched.`);
+                    const mainFileSize = fileStats.size - 8 - dataLength;
+                    res.setHeader('Content-Type', 'application/octet-stream');
+                    fs.createReadStream(ident_path(ident), { end: mainFileSize - 1 }).pipe(res);
+                } else {
+                    console.warn(`[Verify Face ${ident}] FAILURE: Faces did not match.`, body);
+                    res.status(403).json({ error: "Face does not match." });
+                }
+            });
+        } catch (error) {
+            console.error(`[Verify Face ${ident}] Critical error:`, error.message);
+            res.status(500).json({ error: "Failed to process face verification." });
+        }
+    });
+
+    app.post('/verify_totp/:ident', async (req, res) => {
+        const { ident } = req.params;
+        const { token } = req.body;
+        if (!token) return res.status(400).json({ error: "No TOTP token provided." });
+
+        try {
+            const { fileStats, decryptedSecret: totpSecret, dataLength } = await get2FAProtectedFile(ident, 'TOTP');
+            const verified = speakeasy.totp.verify({ secret: totpSecret, encoding: 'base32', token, window: 2 });
+            
+            if (verified) {
+                const mainFileSize = fileStats.size - 8 - dataLength;
+                res.setHeader('Content-Type', 'application/octet-stream');
+                fs.createReadStream(ident_path(ident), { end: mainFileSize - 1 }).pipe(res);
+            } else {
+                res.status(403).json({ error: "Invalid TOTP code." });
+            }
+        } catch (error) {
+            console.error("TOTP verification error:", error.message);
+            res.status(500).json({ error: "Failed to process TOTP verification." });
+        }
+    });
+
+    return app;
 }
 
-function get_addr_port(s) {
-    var spl = s.split(":");
-    if (spl.length === 1) return { host: spl[0], port: 80 };
-    if (spl[0] === '') return { port: parseInt(spl[1]) };
-    return { host: spl[0], port: parseInt(spl[1]) };
-}
-
-function serv(server, serverconfig, callback) {
-  var ap = get_addr_port(serverconfig.listen);
-  return server.listen(ap.port, ap.host, function() {
-      var addr = this.address();
-      callback(addr.address, addr.port);
-  });
-}
-
-function init_defaults(config) {
-  config.path = config.path || {};
-  config.path.i = config.path.i || "../i";
-  config.path.meta = config.path.meta || "../meta";
-  config.path.client = config.path.client || "../client";
-  config.http = config.http || { enabled: true, listen: ":80" };
-  config.https = config.https || { enabled: false };
-}
-
+// --- Server Initialization ---
 function startCleanupJob(config) {
-    schedule.scheduleJob('*/5 * * * *', function() {
-        console.log(`[${new Date().toISOString()}] Running cleanup job for expired files...`);
+    schedule.scheduleJob('*/5 * * * *', () => {
+        console.log(`[${new Date().toISOString()}] Running cleanup job...`);
         const metaDir = path.resolve(__dirname, config.path.meta);
         const filesDir = path.resolve(__dirname, config.path.i);
 
         fs.readdir(metaDir, (err, files) => {
-            if (err) return console.error("Could not list metadata directory for cleanup:", err);
+            if (err) return console.error("Cleanup error:", err);
             
             files.forEach(file => {
                 if (path.extname(file) !== '.json') return;
                 
                 const metaPath = path.join(metaDir, file);
                 fs.readFile(metaPath, 'utf8', (readErr, content) => {
-                    if (readErr) return console.error(`Could not read meta file ${file}:`, readErr);
+                    if (readErr) return;
                     try {
-                        const metadata = JSON.parse(content);
-                        if (metadata.expiresAt && Date.now() > metadata.expiresAt) {
+                        if (Date.now() > JSON.parse(content).expiresAt) {
                             const ident = path.basename(file, '.json');
-                            const filePath = path.join(filesDir, ident);
-                            
                             console.log(`File ${ident} has expired. Deleting...`);
-                            fs.unlink(filePath, (unlinkErr) => {
-                                if (unlinkErr && unlinkErr.code !== 'ENOENT') {
-                                   console.error(`Failed to delete data file for ${ident}:`, unlinkErr);
-                                } else {
-                                    fs.unlink(metaPath, (metaUnlinkErr) => {
-                                        if (metaUnlinkErr) console.error(`Failed to delete meta file for ${ident}:`, metaUnlinkErr);
-                                        else console.log(`Successfully deleted expired file and metadata for ${ident}.`);
-                                    });
-                                }
-                            });
+                            fs.unlink(path.join(filesDir, ident), () => {});
+                            fs.unlink(metaPath, () => {});
                         }
-                    } catch (parseErr) {
-                        console.error(`Could not parse meta file ${file}:`, parseErr);
-                    }
+                    } catch (parseErr) {}
                 });
             });
         });
     });
-    console.log('Scheduled file cleanup job to run every 5 minutes.');
 }
 
 function init(config) {
-  init_defaults(config)
-  const metaDir = path.resolve(__dirname, config.path.meta);
-  if (!fs.existsSync(metaDir)) {
-      console.log(`Creating metadata directory at: ${metaDir}`);
-      fs.mkdirSync(metaDir, { recursive: true });
-  }
+    config.path = {
+        i: config.path?.i || "../i",
+        meta: config.path?.meta || "../meta",
+        client: config.path?.client || "../client"
+    };
+    config.http = config.http || { enabled: true, listen: ":80" };
+    config.https = config.https || { enabled: false };
+    
+    fs.mkdirSync(path.resolve(__dirname, config.path.meta), { recursive: true });
 
-  getECCKeys();
-  var app = create_app(config);
+    getECCKeys();
+    const app = create_app(config);
 
-  if (config.http.enabled) serv(http.createServer(app), config.http, (host, port) => console.info('Started HTTP server at http://%s:%s', host, port));
-  if (config.https.enabled) {
-      if (!config.https.key || !config.https.cert) return console.error("HTTPS is enabled but 'key' or 'cert' path is missing in config.");
-      try {
-          var sec_creds = { key: fs.readFileSync(config.https.key), cert: fs.readFileSync(config.https.cert) };
-          serv(https.createServer(sec_creds, app), config.https, (host, port) => console.info('Started HTTPS server at https://%s:%s', host, port));
-      } catch (e) {
-          console.error("Could not start HTTPS server. Check key/cert paths and permissions.", e.Message);
-      }
-  }
-
-  startCleanupJob(config); // <-- START THE JOB
+    if (config.http.enabled) {
+        const { host, port } = Object.assign({ host: undefined, port: 80 }, get_addr_port(config.http.listen));
+        http.createServer(app).listen(port, host, () => console.info(`HTTP server at http://${host || 'localhost'}:${port}`));
+    }
+    if (config.https.enabled && config.https.key && config.https.cert) {
+        try {
+            const creds = { key: fs.readFileSync(config.https.key), cert: fs.readFileSync(config.https.cert) };
+            const { host, port } = Object.assign({ host: undefined, port: 443 }, get_addr_port(config.https.listen));
+            https.createServer(creds, app).listen(port, host, () => console.info(`HTTPS server at https://${host || 'localhost'}:${port}`));
+        } catch (e) {
+            console.error("Could not start HTTPS server.", e.message);
+        }
+    }
+    
+    startCleanupJob(config);
 }
 
-
-function main(configpath) {
-  if (!path.isAbsolute(configpath)) {
-      configpath = path.join(__dirname, configpath);
-  }
-  console.log(`Loading config from: ${configpath}`);
-  try {
-    init(JSON.parse(fs.readFileSync(configpath)));
-  } catch (err) {
-      console.error(`Error loading or parsing config file "${configpath}":`, err.message);
-      process.exit(1);
-  }
+function get_addr_port(s) {
+    const spl = s.split(":");
+    return spl.length === 1 ? { host: spl[0] } : { host: spl[0] || undefined, port: parseInt(spl[1]) };
 }
 
-var configPath = (process.argv.length > 2) ? process.argv[2] : './server.conf';
-main(configPath)
+const configPath = process.argv.length > 2 ? process.argv[2] : './server.conf';
+try {
+    init(JSON.parse(fs.readFileSync(path.resolve(__dirname, configPath))));
+} catch (err) {
+    console.error(`Error loading config file "${configPath}":`, err.message);
+    process.exit(1);
+}
