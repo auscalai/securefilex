@@ -243,6 +243,56 @@ function create_app(config) {
         });
     });
 
+    app.post('/verify_face_setup', (req, res) => {
+        const { faceDataUri } = req.body;
+        if (!faceDataUri) {
+            return res.status(400).json({ valid: false, error: "No face data provided." });
+        }
+
+        const deepfaceConfig = req.app.locals.config.deepface;
+
+        // Use the same image for both inputs to check for validity and liveness
+        const deepFacePayload = {
+            "img1": faceDataUri,
+            "img2": faceDataUri,
+            "model_name": deepfaceConfig.model_name,
+            "detector_backend": deepfaceConfig.detector_backend,
+            "distance_metric": deepfaceConfig.distance_metric,
+            "anti_spoofing": deepfaceConfig.anti_spoofing,
+            "align": deepfaceConfig.align,
+            "enforce_detection": deepfaceConfig.enforce_detection
+        };
+
+        const requestOptions = {
+            url: deepfaceConfig.url,
+            json: deepFacePayload,
+            timeout: deepfaceConfig.timeout
+        };
+
+        request.post(requestOptions, (err, _, body) => {
+            if (err) {
+                console.error("DeepFace setup check request error:", err.message);
+                return res.status(500).json({ valid: false, error: "Verification server is unavailable." });
+            }
+
+            // If 'verified' is true, it means a face was detected and it passed any other checks (like anti-spoofing).
+            if (body?.verified === true) {
+                res.json({ valid: true });
+            } else {
+                // Provide a more user-friendly error based on the DeepFace response
+                let userError = "Face could not be validated.";
+                if (body?.error) {
+                    if (body.error.includes("Spoof detected")) {
+                        userError = "Spoof detected. Please use a live camera feed.";
+                    } else if (body.error.includes("Face could not be detected")) {
+                        userError = "No clear face was detected. Please try again.";
+                    }
+                }
+                res.status(400).json({ valid: false, error: userError });
+            }
+        });
+    });
+
     app.post('/verify_face/:ident', async (req, res) => {
         const { ident } = req.params;
         const { faceDataUri: newFaceDataUri } = req.body;

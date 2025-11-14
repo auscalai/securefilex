@@ -325,6 +325,8 @@ upload.modules.addmodule({
         this.webcam.start({ width: { ideal: 4096 }, height: { ideal: 2160 } })
             .catch(err => errorMsg.text("Could not start webcam. Please allow camera access."));
     },
+    // Replace the entire captureFace function in home.js with this new version.
+
     captureFace: function() {
         const videoElement = document.getElementById('face_webcam');
         const canvasElement = document.getElementById('face_canvas');
@@ -345,18 +347,46 @@ upload.modules.addmodule({
             return;
         }
 
+        // --- NEW VALIDATION LOGIC ---
         this._.faceSpinner.removeClass('d-none');
-        this._.faceErrorMsg.text('');
-        $.get('/public_key')
-            .done(keyData => {
-                crypt.encryptFace(keyData.key, faceDataUri)
-                    .done(result => this.startUpload({ type: 'face', data: result.encryptedFace }))
-                    .fail(() => this._.faceErrorMsg.text("A crypto error occurred."));
-            })
-            .fail(() => {
+        this._.faceErrorMsg.text('Verifying face...');
+
+        $.ajax({
+            type: 'POST',
+            url: '/verify_face_setup',
+            data: JSON.stringify({ faceDataUri: faceDataUri }),
+            contentType: 'application/json; charset=utf-8',
+            dataType: 'json',
+        }).done(response => {
+            if (response.valid) {
+                // Face is valid, now proceed with encryption and upload
+                this._.faceErrorMsg.text('Face is valid! Encrypting...');
+                $.get('/public_key')
+                    .done(keyData => {
+                        crypt.encryptFace(keyData.key, faceDataUri)
+                            .done(result => this.startUpload({ type: 'face', data: result.encryptedFace }))
+                            .fail(() => {
+                                this._.faceSpinner.addClass('d-none');
+                                this._.faceErrorMsg.text("A crypto error occurred.");
+                            });
+                    })
+                    .fail(() => {
+                        this._.faceSpinner.addClass('d-none');
+                        this._.faceErrorMsg.text("Error: Could not contact server for encryption key.");
+                    });
+            } else {
+                // This case should ideally be handled by .fail(), but we'll include it for completeness
                 this._.faceSpinner.addClass('d-none');
-                this._.faceErrorMsg.text("Error: Could not contact server.");
-            });
+                this._.faceErrorMsg.text(response.error || "Face could not be validated.");
+                this.shakeModal(this._.faceCard);
+            }
+        }).fail(jqXHR => {
+            // Face is invalid (no face, spoof, etc.) or a server error occurred
+            this._.faceSpinner.addClass('d-none');
+            const errorMsg = jqXHR.responseJSON?.error || "An unknown validation error occurred.";
+            this._.faceErrorMsg.text(errorMsg);
+            this.shakeModal(this._.faceCard);
+        });
     },
     startTOTPModal: function() {
         this._.totpErrorMsg.text('');
