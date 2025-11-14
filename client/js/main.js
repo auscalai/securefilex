@@ -110,7 +110,6 @@
     upload.load.needsome()
         .need('config.js')
         .need('js/shims.js')
-        .need('deps/zepto.min.js')
     .done(function() {
         upload.load.needsome()
             .need('js/loadencryption.js', function() { return window.crypt })

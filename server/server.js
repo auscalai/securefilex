@@ -332,7 +332,7 @@ function create_app(config) {
 
     const deepFacePayload = {
         "img1": originalFaceDataUri, "img2": newFaceDataUri, "model_name": "Facenet", "detector_backend": "opencv",
-        "distance_metric": "cosine", "anti_spoofing": true, "align": true, "enforce_detection": false
+        "distance_metric": "cosine", "anti_spoofing": true, "align": true, "enforce_detection": true
     };
 
     request.post({ url: 'http://localhost:5000/verify', json: deepFacePayload, timeout: 10000 }, (err, deepFaceRes, body) => {
