@@ -6,7 +6,10 @@
 
 A privacy-focused, client-side encrypted file and memo sharing platform with advanced 2-Factor Authentication. This system is built with a zero-knowledge philosophy: the server has no access to user passwords or unencrypted files. All cryptography happens directly in the browser.
 
-This project was developed as a Capstone Project for a BSc (Hons) in Information Technology.
+This project was developed as a Final Year Capstone Project for a BSc (Hons) in Information Technology (Computer Networking & Security).
+
+<img width="1873" height="808" alt="image" src="https://github.com/user-attachments/assets/7ac9e5ef-d4b1-496d-b513-2ad32dfed4cc" />
+
 
 -----
 
