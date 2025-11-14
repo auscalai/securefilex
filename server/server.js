@@ -245,26 +245,35 @@ function create_app(config) {
 
     app.post('/verify_face/:ident', async (req, res) => {
         const { ident } = req.params;
-        const { faceDataUri: newFaceDataUri } = req.body; // Use a distinct name for the new image
+        const { faceDataUri: newFaceDataUri } = req.body;
         if (!newFaceDataUri) return res.status(400).json({ error: "No face data provided." });
 
         try {
-            // Use a different name for the original image to avoid shadowing
             const { fileStats, decryptedSecret: originalFaceDataUri, dataLength } = await get2FAProtectedFile(ident, 'FACE');
             
+
+            const deepfaceConfig = req.app.locals.config.deepface;
+
             const deepFacePayload = {
                 "img1": originalFaceDataUri,
                 "img2": newFaceDataUri,
-                "model_name": "Facenet",
-                "detector_backend": "opencv",
-                "distance_metric": "cosine",
-                "anti_spoofing": true,
-                "align": true,
-                "enforce_detection": true
+                "model_name": deepfaceConfig.model_name,
+                "detector_backend": deepfaceConfig.detector_backend,
+                "distance_metric": deepfaceConfig.distance_metric,
+                "anti_spoofing": deepfaceConfig.anti_spoofing,
+                "align": deepfaceConfig.align,
+                "enforce_detection": deepfaceConfig.enforce_detection
             };
 
-            request.post({ url: 'http://localhost:5000/verify', json: deepFacePayload, timeout: 10000 }, (err, _, body) => {
+            const requestOptions = {
+                url: deepfaceConfig.url,
+                json: deepFacePayload,
+                timeout: deepfaceConfig.timeout
+            };
+
+            request.post(requestOptions, (err, _, body) => {
                 if (err) {
+                    console.error("DeepFace request error:", err.message);
                     return res.status(500).json({ error: "Verification server error." });
                 }
                 if (body?.error) {
@@ -280,6 +289,7 @@ function create_app(config) {
                 }
             });
         } catch (error) {
+            console.error("Face verification processing error:", error.message);
             res.status(500).json({ error: "Failed to process face verification." });
         }
     });
@@ -339,6 +349,18 @@ function startCleanupJob(config) {
 }
 
 function init(config) {
+    const defaultDeepFaceConfig = {
+        url: "http://localhost:5000/verify",
+        timeout: 10000,
+        model_name: "Facenet",
+        detector_backend: "opencv",
+        distance_metric: "cosine",
+        anti_spoofing: true,
+        align: true,
+        enforce_detection: true
+    };
+    
+    config.deepface = Object.assign({}, defaultDeepFaceConfig, config.deepface);
     config.path = {
         i: config.path?.i || "../i",
         meta: config.path?.meta || "../meta",
