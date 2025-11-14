@@ -221,7 +221,7 @@ function create_app(config) {
 
     app.post('/verify_totp_setup', (req, res) => {
         const { secret, token } = req.body;
-        const verified = speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 2 });
+        const verified = speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 0 });
         res.json({ valid: verified });
     });
 
@@ -291,7 +291,7 @@ function create_app(config) {
 
         try {
             const { fileStats, decryptedSecret: totpSecret, dataLength } = await get2FAProtectedFile(ident, 'TOTP');
-            const verified = speakeasy.totp.verify({ secret: totpSecret, encoding: 'base32', token, window: 2 });
+            const verified = speakeasy.totp.verify({ secret: totpSecret, encoding: 'base32', token, window: 0 });
             
             if (verified) {
                 const mainFileSize = fileStats.size - 8 - dataLength;
