@@ -119,6 +119,7 @@
     .done(function() {
         upload.load.needsome()
             .need('js/loadencryption.js', function() { return window.crypt })
+            .need('js/totp_client.js', function() { return window.TOTP })
             .need('js/updown.js', function() { return upload.updown })
             .need('js/textpaste.js', function() { return upload.textpaste })
             .need('js/dragresize.js', function() { return window.dragresize })

@@ -408,16 +408,30 @@ upload.modules.addmodule({
         this._.totpErrorMsg.text('');
         this._.totpVerifyInput.val('');
         this._.totpmodal.show();
-        $.get('/generate_totp')
-            .done(response => {
-                this.state.totpSecret = response.secret;
-                this._.totpSecretDisplay.val(response.secret);
-                this._.totpQRContainer.html('').append($('<img>', { src: response.qrCode }));
-            })
-            .fail(() => this._.totpErrorMsg.text("Error: Could not generate TOTP secret."));
+        
+        // 1. Generate Secret Locally (Zero Knowledge)
+        console.log(`[Client-DEBUG] Generating TOTP Secret locally...`);
+        const secret = TOTP.generateSecret();
+        this.state.totpSecret = secret; // Store in RAM
+        this._.totpSecretDisplay.val(secret);
+
+        // 2. Generate QR Code Locally
+        const uri = TOTP.generateUri(secret, 'SecureFileX User');
+        this._.totpQRContainer.html(''); // Clear previous
+        
+        // Render QR
+        new QRCode(this._.totpQRContainer[0], {
+            text: uri,
+            width: 128,
+            height: 128
+        });
+        
+        console.log(`[Client-DEBUG] Secret Generated: ${secret}`);
     },
+
     formatTOTPInput: function(e) { e.target.value = e.target.value.replace(/\D/g, ''); },
-    verifyTOTP: function() {
+    // --- UPDATED verifyTOTP (Async) ---
+    verifyTOTP: async function() { // <--- 1. ADD 'async' HERE
         const code = this._.totpVerifyInput.val();
         const btn = $('#verify_totp_btn'); 
 
@@ -431,53 +445,42 @@ upload.modules.addmodule({
         btn.html('<div class="spinner-border spinner-border-sm me-2" role="status"></div>Verifying...').prop('disabled', true);
         
         this._.totpErrorMsg.text('Verifying...');
-        console.log(`[Client-DEBUG] 1. Verifying TOTP Code (${code}) with temporary secret...`);
+        console.log(`[Client-DEBUG] 1. Verifying TOTP Code (${code}) locally...`);
         
-         $.ajax({
-            type: 'POST',
-            url: '/verify_totp_setup',
-            data: JSON.stringify({ secret: this.state.totpSecret, token: code }),
-            contentType: 'application/json; charset=utf-8',
-            dataType: 'json',
-            success: response => {
-                if (response.valid) {
-                    console.log(`[Client-DEBUG] 2. TOTP Valid. Fetching Encryption Key...`);
+        // <--- 2. ADD 'await' HERE
+        const isValid = await TOTP.verify(this.state.totpSecret, code);
+
+        if (isValid) {
+            console.log(`[Client-DEBUG] 2. Local Verification PASSED. Fetching Encryption Key...`);
+            
+            // --- KEY EXCHANGE LOGGING ---
+            console.log(`[Client-DEBUG] 3. Requesting Server's ECC Public Key (GET /public_key)...`);
+            
+            $.get('/public_key')
+                .done(keyData => {
+                    console.log(`[Client-DEBUG] 4. Public Key Received: ${keyData.key.substring(0, 20)}...`);
+                    console.log(`[Client-DEBUG] 5. Encrypting TOTP Secret on Client-Side using Server Key...`);
                     
-                    // --- KEY EXCHANGE LOGGING ---
-                    console.log(`[Client-DEBUG] 3. Requesting Server's ECC Public Key (GET /public_key)...`);
-                    
-                    $.get('/public_key')
-                        .done(keyData => {
-                            console.log(`[Client-DEBUG] 4. Public Key Received: ${keyData.key.substring(0, 20)}...`);
-                            console.log(`[Client-DEBUG] 5. Encrypting TOTP Secret on Client-Side using Server Key...`);
-                            
-                            crypt.encryptTOTP(keyData.key, this.state.totpSecret)
-                                .done(result => {
-                                    console.log(`[Client-DEBUG] 6. Secret Encrypted. Starting Upload Process.`);
-                                    this.startUpload({ type: 'totp', data: result.encryptedTOTP });
-                                })
-                                .fail(() => {
-                                    this._.totpErrorMsg.text("A crypto error occurred.");
-                                    btn.html(originalBtnText).prop('disabled', false);
-                                });
+                    crypt.encryptTOTP(keyData.key, this.state.totpSecret)
+                        .done(result => {
+                            console.log(`[Client-DEBUG] 6. Secret Encrypted. Starting Upload Process.`);
+                            this.startUpload({ type: 'totp', data: result.encryptedTOTP });
                         })
                         .fail(() => {
-                            this._.totpErrorMsg.text("Error: Could not contact server.");
+                            this._.totpErrorMsg.text("A crypto error occurred.");
                             btn.html(originalBtnText).prop('disabled', false);
                         });
-                } else {
-                    console.warn(`[Client-DEBUG] TOTP Verification Failed.`);
-                    this._.totpErrorMsg.text("Invalid code. Please try again.");
-                    this.shakeModal(this._.totpCard);
+                })
+                .fail(() => {
+                    this._.totpErrorMsg.text("Error: Could not contact server.");
                     btn.html(originalBtnText).prop('disabled', false);
-                }
-            },
-            error: () => {
-                this._.totpErrorMsg.text("Verification failed. Please try again.");
-                this.shakeModal(this._.totpCard);
-                btn.html(originalBtnText).prop('disabled', false);
-            }
-        });
+                });
+        } else {
+            console.warn(`[Client-DEBUG] Local TOTP Verification Failed.`);
+            this._.totpErrorMsg.text("Invalid code. Please try again.");
+            this.shakeModal(this._.totpCard);
+            btn.html(originalBtnText).prop('disabled', false);
+        }
     },
     startUpload: function(twoFAData) {
         if (this.webcam) this.webcam.stop();

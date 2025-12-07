@@ -217,20 +217,6 @@ function create_app(config) {
         }
     });
 
-    app.get('/generate_totp', (req, res) => {
-        const secret = speakeasy.generateSecret({ name: 'SecureFile Locker', length: 32 });
-        QRCode.toDataURL(secret.otpauth_url, (err, dataUrl) => {
-            if (err) return res.status(500).json({ error: "Could not generate QR code." });
-            res.json({ secret: secret.base32, qrCode: dataUrl });
-        });
-    });
-
-    app.post('/verify_totp_setup', (req, res) => {
-        const { secret, token } = req.body;
-        const verified = speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 0 });
-        res.json({ valid: verified });
-    });
-
     app.get('/check_auth_type/:ident', (req, res) => {
         const filePath = ident_path(req.params.ident);
         fs.stat(filePath, (err, stats) => {
