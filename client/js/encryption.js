@@ -14,10 +14,6 @@ function previewBytes(name, bitArray) {
 
 function parametersfrombits(seed) {
     var out = sjcl.hash.sha512.hash(seed);
-    // DEBUG: Show derived params
-    console.log('[Worker-DEBUG] Key Derivation Complete.');
-    console.log(`[Worker-DEBUG] IV Generated: ${sjcl.codec.hex.fromBits(sjcl.bitArray.bitSlice(out, 256, 384))}`);
-    
     return {
         'seed': seed,
         'key': sjcl.bitArray.bitSlice(out, 0, 256),
@@ -35,19 +31,21 @@ function parameters(seed) {
     return parametersfrombits(seed);
 }
 
+// --- ENCRYPT FUNCTION WITH TIMING ---
 function encrypt(file, seed, id, password) {
     console.log('------------------------------------------------');
     console.log('[Worker-DEBUG] STARTING ENCRYPTION JOB');
     console.log(`[Worker-DEBUG] Input File Size: ${file.byteLength} bytes`);
     
+    // START TIMER
+    var startTime = performance.now();
+
     var params = parameters(seed);
-    
     console.log(`[Worker-DEBUG] Password Hashing (PBKDF2) starting...`);
     var aes_key = sjcl.misc.pbkdf2(password, params.seed, 1000, 256);
     previewBytes("Derived AES Key", aes_key);
 
     var uarr = new Uint8Array(file);
-    // Proof of Plaintext
     console.log(`[Worker-DEBUG] PLAINTEXT PREVIEW (First 10 bytes): [${uarr.subarray(0, 10).join(', ')}]`);
 
     var before = sjcl.codec.bytes.toBits(uarr);
@@ -58,12 +56,16 @@ function encrypt(file, seed, id, password) {
     
     var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
     
+    // STOP TIMER
+    var endTime = performance.now();
+    var duration = (endTime - startTime).toFixed(2);
+
+    console.log(`%c[Performance] AES-CCM Encryption Time: ${duration} ms`, 'color: #d63384; font-weight: bold; font-size: 1.1em;');
+    
     // Proof of Ciphertext
     console.log(`[Worker-DEBUG] CIPHERTEXT PREVIEW (First 10 bytes): [${afterarray.subarray(0, 10).join(', ')}]`);
-    console.log('[Worker-DEBUG] Notice that Plaintext bytes != Ciphertext bytes. Data is secure.');
     
     var encryptedBlob = new Blob([afterarray], { type: 'application/octet-stream' });
-    
     console.log(`[Worker-DEBUG] Encryption Finished. Blob created: ${encryptedBlob.size} bytes.`);
     console.log('------------------------------------------------');
 
@@ -80,9 +82,13 @@ var fileheader = [
     85, 80, 49, 0
 ];
 
+// --- DECRYPT FUNCTION WITH TIMING ---
 function decrypt(file, seed, id, password) {
     console.log('%c[Worker-DEBUG] --- STARTING DECRYPTION JOB ---', 'color: #198754; font-weight: bold;');
     
+    // START TIMER
+    var startTime = performance.now();
+
     var params = parameters(seed);
     console.log(`[Worker-DEBUG] 1. Key Derivation (PBKDF2) starting...`);
     var aes_key = sjcl.misc.pbkdf2(password, params.seed, 1000, 256);
@@ -91,7 +97,6 @@ function decrypt(file, seed, id, password) {
     var uarr = new Uint8Array(file);
     console.log(`[Worker-DEBUG] 2. Encrypted Input Blob Size: ${uarr.byteLength} bytes`);
     
-    // Check for custom header
     var hasheader = true;
     for (var i = 0; i < fileheader.length; i++) {
         if (uarr[i] != fileheader[i]) {
@@ -100,10 +105,8 @@ function decrypt(file, seed, id, password) {
         }
     }
     if (hasheader) {
-        console.log('[Worker-DEBUG] 3. File Magic Header Found (Valid SecureFileX container). Stripping...');
+        console.log('[Worker-DEBUG] 3. File Magic Header Found. Stripping...');
         uarr = uarr.subarray(fileheader.length);
-    } else {
-        console.warn('[Worker-DEBUG] 3. No File Magic Header found (Legacy or Raw AES).');
     }
     
     var before = sjcl.codec.bytes.toBits(uarr);
@@ -114,13 +117,18 @@ function decrypt(file, seed, id, password) {
         var after = sjcl.mode.ccm.decrypt(prp, before, params.iv);
         console.log('%c[Worker-DEBUG] 5. INTEGRITY CHECK PASSED (MAC Valid).', 'color: #198754');
     } catch (e) {
-        console.error('[Worker-DEBUG] Decryption FAILED. MAC Mismatch (Wrong Password or Tampered Data).');
+        console.error('[Worker-DEBUG] Decryption FAILED. MAC Mismatch.');
         throw e;
     }
 
     var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
     
-    // Extract JSON Header
+    // STOP TIMER
+    var endTime = performance.now();
+    var duration = (endTime - startTime).toFixed(2);
+
+    console.log(`%c[Performance] AES-CCM Decryption Time: ${duration} ms`, 'color: #d63384; font-weight: bold; font-size: 1.1em;');
+
     var header = '';
     var headerview = new DataView(afterarray.buffer);
     var i = 0;
@@ -135,7 +143,6 @@ function decrypt(file, seed, id, password) {
     console.log('[Worker-DEBUG] 6. Extracted Internal Metadata:', headerData);
 
     var data = new Blob([afterarray]);
-    // Slicing off the JSON header to get pure file content
     var finalFile = data.slice((i * 2) + 2, data.size, headerData.mime);
     
     console.log(`[Worker-DEBUG] 7. Final Decrypted File Size: ${finalFile.size} bytes`);
@@ -150,108 +157,42 @@ function decrypt(file, seed, id, password) {
     });
 }
 
-// --- UPDATED IDENT FUNCTION (To show hash resolution) ---
 function ident(seed, id) {
     console.log(`[Worker-DEBUG] Resolving File ID from URL Hash (SHA-512)...`);
     var params = parameters(seed);
     var identStr = sjcl.codec.base64url.fromBits(params.ident);
     console.log(`[Worker-DEBUG] Resolved Ident: ${identStr}`);
-    postMessage({
-        'id': id,
-        'type': 'ident_result',
-        'ident': identStr
-    });
+    postMessage({ 'id': id, 'type': 'ident_result', 'ident': identStr });
 }
-
 function encrypt_face(pubKeyBase64, faceDataUri, id) {
-    console.log('[Worker-DEBUG] Encrypting Facial Biometric Data (Zero-Knowledge)...');
     var pubKeyPoint = sjcl.codec.base64.toBits(pubKeyBase64);
-    var pubKey = new sjcl.ecc.elGamal.publicKey(
-        sjcl.ecc.curves.c256,
-        pubKeyPoint
-    );
-    var encryptedFaceJson = sjcl.encrypt(pubKey, faceDataUri, {
-        adata: "",
-        iv: sjcl.random.randomWords(4),
-        iter: 1000,
-        ks: 256,
-        ts: 128,
-        v: 1
-    });
-    console.log('[Worker-DEBUG] Face Data Encrypted successfully.');
-    postMessage({
-        'id': id,
-        'type': 'encrypt_face_result',
-        'encryptedFace': encryptedFaceJson
-    });
+    var pubKey = new sjcl.ecc.elGamal.publicKey(sjcl.ecc.curves.c256, pubKeyPoint);
+    var encryptedFaceJson = sjcl.encrypt(pubKey, faceDataUri, { adata: "", iv: sjcl.random.randomWords(4), iter: 1000, ks: 256, ts: 128, v: 1 });
+    postMessage({ 'id': id, 'type': 'encrypt_face_result', 'encryptedFace': encryptedFaceJson });
 }
-
 function encrypt_totp(pubKeyBase64, totpSecret, id) {
-    console.log('[Worker-DEBUG] Encrypting TOTP Secret...');
     var pubKeyPoint = sjcl.codec.base64.toBits(pubKeyBase64);
-    var pubKey = new sjcl.ecc.elGamal.publicKey(
-        sjcl.ecc.curves.c256,
-        pubKeyPoint
-    );
-    var encryptedTOTPJson = sjcl.encrypt(pubKey, totpSecret, {
-        adata: "",
-        iv: sjcl.random.randomWords(4),
-        iter: 1000,
-        ks: 256,
-        ts: 128,
-        v: 1
-    });
-    postMessage({
-        'id': id,
-        'type': 'encrypt_totp_result',
-        'encryptedTOTP': encryptedTOTPJson
-    });
+    var pubKey = new sjcl.ecc.elGamal.publicKey(sjcl.ecc.curves.c256, pubKeyPoint);
+    var encryptedTOTPJson = sjcl.encrypt(pubKey, totpSecret, { adata: "", iv: sjcl.random.randomWords(4), iter: 1000, ks: 256, ts: 128, v: 1 });
+    postMessage({ 'id': id, 'type': 'encrypt_totp_result', 'encryptedTOTP': encryptedTOTPJson });
 }
-
 function onprogress(id, progress) {
-    // Reduce console spam, only log every 20%
-    if (Math.floor(progress * 100) % 20 === 0) {
-        // console.log(`[Worker-DEBUG] AES Progress: ${Math.floor(progress * 100)}%`);
-    }
-    postMessage({
-        'id': id,
-        'eventsource': 'encrypt',
-        'loaded': progress,
-        'total': 1,
-        'type': 'progress'
-    });
+    if (Math.floor(progress * 100) % 20 === 0) {}
+    postMessage({ 'id': id, 'eventsource': 'encrypt', 'loaded': progress, 'total': 1, 'type': 'progress' });
 }
-
 onmessage = function (e) {
-    if (e.data.entropy) {
-        sjcl.random.addEntropy(e.data.entropy, 1024, "crypto.getRandomValues");
-    }
+    if (e.data.entropy) { sjcl.random.addEntropy(e.data.entropy, 1024, "crypto.getRandomValues"); }
     var progress = onprogress.bind(undefined, e.data.id);
     sjcl.mode.ccm.listenProgress(progress);
     try {
-        if (e.data.action == 'decrypt') {
-            decrypt(e.data.data, e.data.seed, e.data.id, e.data.password);
-        } else if (e.data.action == 'ident') {
-            ident(e.data.seed, e.data.id);
-        } else if (e.data.action == 'encrypt') {
-            encrypt(e.data.data, e.data.seed, e.data.id, e.data.password);
-        } else if (e.data.action == 'encrypt_face') {
-            encrypt_face(e.data.pubKey, e.data.faceData, e.data.id);
-        } else if (e.data.action == 'encrypt_totp') {
-            encrypt_totp(e.data.pubKey, e.data.totpSecret, e.data.id);
-        } else {
-            postMessage({
-                'id': e.data.id,
-                'type': 'error',
-                'message': 'Unknown worker action'
-            });
-        }
+        if (e.data.action == 'decrypt') { decrypt(e.data.data, e.data.seed, e.data.id, e.data.password); } 
+        else if (e.data.action == 'ident') { ident(e.data.seed, e.data.id); } 
+        else if (e.data.action == 'encrypt') { encrypt(e.data.data, e.data.seed, e.data.id, e.data.password); } 
+        else if (e.data.action == 'encrypt_face') { encrypt_face(e.data.pubKey, e.data.faceData, e.data.id); } 
+        else if (e.data.action == 'encrypt_totp') { encrypt_totp(e.data.pubKey, e.data.totpSecret, e.data.id); } 
+        else { postMessage({ 'id': e.data.id, 'type': 'error', 'message': 'Unknown worker action' }); }
     } catch (error) {
-        postMessage({
-            'id': e.data.id,
-            'type': 'error',
-            'message': error.message || 'Encryption/Decryption Failed'
-        });
+        postMessage({ 'id': e.data.id, 'type': 'error', 'message': error.message || 'Encryption/Decryption Failed' });
     }
     sjcl.mode.ccm.unListenProgress(progress);
 };

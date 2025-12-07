@@ -23,6 +23,7 @@ upload.modules.addmodule({
                 <form><input type="file" id="filepicker" class="d-none" /></form>
             </div>
         </div>
+        <!-- Expiry Modal -->
         <div class="modal fade" id="expiry_modal_overlay" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content password-card-global">
@@ -45,6 +46,7 @@ upload.modules.addmodule({
                 </div>
             </div>
         </div>
+        <!-- Password Modal -->
         <div class="modal fade" id="upload_password_modal_overlay" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content password-card-global">
@@ -63,6 +65,7 @@ upload.modules.addmodule({
                 </div>
             </div>
         </div>
+        <!-- 2FA Choice Modal -->
         <div class="modal fade" id="twofa_choice_modal_overlay" tabindex="-1">
              <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content password-card-global">
@@ -78,6 +81,7 @@ upload.modules.addmodule({
                 </div>
             </div>
         </div>
+        <!-- Face Modal -->
         <div class="modal fade" id="upload_face_modal_overlay" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content password-card-global" style="max-width: 540px;">
@@ -98,6 +102,7 @@ upload.modules.addmodule({
                 </div>
             </div>
         </div>
+        <!-- TOTP Modal -->
         <div class="modal fade" id="upload_totp_modal_overlay" tabindex="-1">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content password-card-global" style="max-width: 500px;">
@@ -202,7 +207,6 @@ upload.modules.addmodule({
         delete this._;
     },
     
-    // --- ALL MISSING FUNCTIONS RESTORED ---
     dragleave: function (e) { e.preventDefault(); e.stopPropagation(); this._.pastearea.removeClass('dragover') },
     drop: function (e) { e.preventDefault(); this._.pastearea.removeClass('dragover'); if (e.originalEvent.dataTransfer.files.length > 0) this.doupload(e.originalEvent.dataTransfer.files[0]) },
     dragover: function (e) { e.preventDefault(); this._.pastearea.addClass('dragover') },
@@ -233,7 +237,11 @@ upload.modules.addmodule({
         this._.expiryErrorMsg.text('');
         this._.expiryModal.show();
     },
+    
+    // --- FIX: Add blur to selectExpiry ---
     selectExpiry: function() {
+        if (document.activeElement) document.activeElement.blur(); // FIX
+
         const value = parseInt(this._.expiryValue.val(), 10);
         const unit = this._.expiryUnit.val();
         if (isNaN(value) || value < 1) {
@@ -252,14 +260,20 @@ upload.modules.addmodule({
             this._.passwordfield.val('');
             this._.uploadErrorMsg.text('');
             this._.passwordmodal.show();
+            // Optional: Auto focus the password input
+            setTimeout(() => this._.passwordfield.focus(), 500); 
         });
         this._.expiryModal.hide();
     },
+    
     backToExpiry: function() {
+        if (document.activeElement) document.activeElement.blur(); // FIX
         $(this._.passwordmodal._element).one('hidden.bs.modal', () => this._.expiryModal.show());
         this._.passwordmodal.hide();
     },
+    
     cancelUpload: function() {
+        if (document.activeElement) document.activeElement.blur(); // FIX
         const onHide = () => {
             this._.uploadblob = null;
             this._.uploadview.removeClass('d-none');
@@ -272,8 +286,12 @@ upload.modules.addmodule({
             onHide();
         }
     },
+    
+    // --- FIX: Add blur to submitpassword ---
     submitpassword: function(e) {
         e.preventDefault();
+        if (document.activeElement) document.activeElement.blur(); // FIX
+
         const password = this._.passwordfield.val();
         if (!password) {
             this._.uploadErrorMsg.text("Please enter a password.");
@@ -284,23 +302,29 @@ upload.modules.addmodule({
         $(this._.passwordmodal._element).one('hidden.bs.modal', () => this._.twofaChoiceModal.show());
         this._.passwordmodal.hide();
     },
+    
+    // --- FIX: Add blur to 2FA choices ---
     chooseFace: function() {
+        if (document.activeElement) document.activeElement.blur(); // FIX
         $(this._.twofaChoiceModal._element).one('hidden.bs.modal', () => this.startFaceModal());
         this._.twofaChoiceModal.hide();
     },
     chooseTOTP: function() {
+        if (document.activeElement) document.activeElement.blur(); // FIX
         $(this._.twofaChoiceModal._element).one('hidden.bs.modal', () => this.startTOTPModal());
         this._.twofaChoiceModal.hide();
     },
     skip2FA: function() {
+        if (document.activeElement) document.activeElement.blur(); // FIX
         const btn = $('#skip_2fa_btn');
         btn.html('<div class="spinner-border spinner-border-sm me-2" role="status"></div>Starting...').prop('disabled', true);
         
-        // Wait for modal transition then start
         $(this._.twofaChoiceModal._element).one('hidden.bs.modal', () => this.startUpload(null));
         this._.twofaChoiceModal.hide();
     },
+    
     backFrom2FA: function() {
+        if (document.activeElement) document.activeElement.blur(); // FIX
         const active2FAModal = this._.facemodal._isShown ? this._.facemodal : (this._.totpmodal._isShown ? this._.totpmodal : null);
         if (active2FAModal) {
             if (active2FAModal === this._.facemodal && this.webcam) {
@@ -311,6 +335,7 @@ upload.modules.addmodule({
             active2FAModal.hide();
         }
     },
+    
     startFaceModal: function() {
         this._.facemodal.show();
         const videoElement = document.getElementById('face_webcam');
@@ -329,7 +354,10 @@ upload.modules.addmodule({
         this.webcam.start({ width: { ideal: 4096 }, height: { ideal: 2160 } })
             .catch(err => errorMsg.text("Could not start webcam. Please allow camera access."));
     },
+
     captureFace: function() {
+        if (document.activeElement) document.activeElement.blur(); 
+
         const videoElement = document.getElementById('face_webcam');
         const canvasElement = document.getElementById('face_canvas');
         const btn = $('#capture_face_btn'); 
@@ -358,6 +386,9 @@ upload.modules.addmodule({
         this._.faceErrorMsg.text('Verifying face with server...');
         console.log(`[Client-DEBUG] 1. Sending Face Snapshot to DeepFace for Liveness Check...`);
 
+        // --- START TIMER ---
+        const startTime = performance.now();
+
         $.ajax({
             type: 'POST',
             url: '/verify_face_setup',
@@ -365,11 +396,15 @@ upload.modules.addmodule({
             contentType: 'application/json; charset=utf-8',
             dataType: 'json',
         }).done(response => {
+            // --- STOP TIMER ---
+            const endTime = performance.now();
+            const duration = (endTime - startTime).toFixed(2);
+            console.log(`%c[Performance] Face Liveness Check Latency: ${duration} ms`, 'color: #d63384; font-weight: bold; font-size: 1.1em;');
+
             if (response.valid) {
                 console.log(`[Client-DEBUG] 2. Liveness Check PASSED. Preparing for Encryption.`);
                 this._.faceErrorMsg.text('Face accepted. Fetching Encryption Key...');
                 
-                // --- KEY EXCHANGE LOGGING ---
                 console.log(`[Client-DEBUG] 3. Requesting Server's ECC Public Key (GET /public_key)...`);
                 
                 $.get('/public_key')
@@ -380,6 +415,7 @@ upload.modules.addmodule({
                         crypt.encryptFace(keyData.key, faceDataUri)
                             .done(result => {
                                 console.log(`[Client-DEBUG] 6. Face Data Encrypted. Starting Upload Process.`);
+                                if (document.activeElement) document.activeElement.blur(); 
                                 this.startUpload({ type: 'face', data: result.encryptedFace });
                             })
                             .fail(() => {
@@ -404,22 +440,20 @@ upload.modules.addmodule({
             btn.html(originalBtnText).prop('disabled', false); 
         });
     },
+    
     startTOTPModal: function() {
         this._.totpErrorMsg.text('');
         this._.totpVerifyInput.val('');
         this._.totpmodal.show();
         
-        // 1. Generate Secret Locally (Zero Knowledge)
         console.log(`[Client-DEBUG] Generating TOTP Secret locally...`);
         const secret = TOTP.generateSecret();
-        this.state.totpSecret = secret; // Store in RAM
+        this.state.totpSecret = secret; 
         this._.totpSecretDisplay.val(secret);
 
-        // 2. Generate QR Code Locally
         const uri = TOTP.generateUri(secret, 'SecureFileX User');
-        this._.totpQRContainer.html(''); // Clear previous
+        this._.totpQRContainer.html(''); 
         
-        // Render QR
         new QRCode(this._.totpQRContainer[0], {
             text: uri,
             width: 128,
@@ -428,10 +462,12 @@ upload.modules.addmodule({
         
         console.log(`[Client-DEBUG] Secret Generated: ${secret}`);
     },
-
+    
     formatTOTPInput: function(e) { e.target.value = e.target.value.replace(/\D/g, ''); },
-    // --- UPDATED verifyTOTP (Async) ---
-    verifyTOTP: async function() { // <--- 1. ADD 'async' HERE
+    
+    verifyTOTP: async function() { 
+        if (document.activeElement) document.activeElement.blur(); // FIX
+
         const code = this._.totpVerifyInput.val();
         const btn = $('#verify_totp_btn'); 
 
@@ -447,13 +483,10 @@ upload.modules.addmodule({
         this._.totpErrorMsg.text('Verifying...');
         console.log(`[Client-DEBUG] 1. Verifying TOTP Code (${code}) locally...`);
         
-        // <--- 2. ADD 'await' HERE
         const isValid = await TOTP.verify(this.state.totpSecret, code);
 
         if (isValid) {
             console.log(`[Client-DEBUG] 2. Local Verification PASSED. Fetching Encryption Key...`);
-            
-            // --- KEY EXCHANGE LOGGING ---
             console.log(`[Client-DEBUG] 3. Requesting Server's ECC Public Key (GET /public_key)...`);
             
             $.get('/public_key')
@@ -464,6 +497,7 @@ upload.modules.addmodule({
                     crypt.encryptTOTP(keyData.key, this.state.totpSecret)
                         .done(result => {
                             console.log(`[Client-DEBUG] 6. Secret Encrypted. Starting Upload Process.`);
+                            if (document.activeElement) document.activeElement.blur(); 
                             this.startUpload({ type: 'totp', data: result.encryptedTOTP });
                         })
                         .fail(() => {
@@ -482,44 +516,31 @@ upload.modules.addmodule({
             btn.html(originalBtnText).prop('disabled', false);
         }
     },
+    
     startUpload: function(twoFAData) {
         if (this.webcam) this.webcam.stop();
-        
         const activeModal = [this._.facemodal, this._.totpmodal, this._.twofaChoiceModal].find(m => m._isShown);
-        
         const showProgress = () => {
-            // 1. FIX: Make the main container visible again (it was hidden in doupload)
             this._.uploadview.removeClass('d-none');
-            
-            // 2. Hide the drag-and-drop box (pastearea)
             this._.pastearea.addClass('d-none');
-
-            // 3. Show the progress box
             this._.progress.main.removeClass('d-none');
-            
-            // Reset Progress UI
             this._.progress.bg.css('width', '0%');
             this._.progress.amount.text('0%');
             this._.progress.type.text('Initializing Encryption...');
             
-            // Hide the top bar (New Paste button)
             this._.newpaste.closest('.topbar').addClass('d-none');
-            
-            // Start the actual upload/encryption
             upload.updown.upload(this._.uploadblob, this.progress.bind(this), this.uploaded.bind(this), this.state.password, twoFAData);
             this._.uploadblob = null;
         };
-
         if (activeModal) {
-            // Wait for the modal to fully hide before showing the progress bar
             $(activeModal._element).one('hidden.bs.modal', showProgress);
             activeModal.hide();
         } else {
             showProgress();
         }
     },
+    
     progress: function(e) {
-        // 1. Handle Error Objects
         if (typeof e === 'object' && e.status === 'error') {
             let userMsg = "Upload Failed";
             if (e.detail === "Invalid array length" || (e.detail && e.detail.includes("Memory"))) {
@@ -527,15 +548,13 @@ upload.modules.addmodule({
             } else {
                 userMsg = "Error: " + (e.detail || "Unknown error");
             }
-            
-            this._.progress.type.text(userMsg); // No dots for error
+            this._.progress.type.text(userMsg);
             this._.progress.bg.addClass('bg-danger').css('width', '100%');
             this._.progress.amount.text('!');
             this._.newpaste.closest('.topbar').removeClass('d-none');
             return;
         }
 
-        // 2. Handle Legacy Strings
         if (typeof e === 'string') {
             const msg = e === 'error' ? 'Upload Failed' : e;
             this._.progress.type.text(msg);
@@ -546,7 +565,6 @@ upload.modules.addmodule({
             return;
         }
         
-        // 3. Handle Progress & Animated Dots
         let type;
         if (e.eventsource === 'reading') {
             type = 'Reading File';
@@ -556,7 +574,6 @@ upload.modules.addmodule({
             type = 'Uploading Locker';
         }
         
-        // Only update the HTML if the status type has changed (prevents animation reset)
         if (this._.lastType !== type) {
             this._.lastType = type;
             this._.progress.type.html(`${type}<span class="animated-dots"></span>`);
@@ -567,6 +584,7 @@ upload.modules.addmodule({
         this._.progress.bg.css('width', `${percent}%`);
         this._.progress.amount.text(`${percent}%`);
     },
+    
     uploaded: function (data, response) {
         const performRedirect = () => {
             localStorage.setItem('delete-' + data.ident, response.delkey);

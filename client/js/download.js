@@ -1,9 +1,4 @@
 // --- Helper function for error animation ---
-function shakeModal(cardElement) {
-    if (cardElement) anime({ targets: cardElement, translateX: [-10, 10, -10, 10, 0], duration: 300, easing: 'easeInOutSine' });
-}
-
-// --- Generic Modal Setup Factory ---
 function setupPrompt(config) {
     if (window[config.globalGetFn] || document.getElementById(config.modalId)) return;
 
@@ -15,16 +10,19 @@ function setupPrompt(config) {
     
     // State variables
     let currentVerifyCallback, currentCancelCallback;
-    let actionType = 'CANCEL'; // Can be 'CANCEL' or 'SUBMIT'
-    let submissionData = null; // Store data to pass after hide
+    let actionType = 'CANCEL'; 
+    let submissionData = null; 
 
     // --- BUTTON CLICK HANDLER ---
     $(`#${config.submitBtnId}`).on('click', () => {
-        // 1. Capture the data immediately
+        // --- FIX 1: Remove focus from button before hiding ---
+        // This prevents "Blocked aria-hidden" error because the focus is no longer inside the modal
+        if (document.activeElement) document.activeElement.blur();
+
         const captureProxy = (data) => {
             submissionData = data;
-            actionType = 'SUBMIT'; // Mark as a submit action
-            modalElement.hide();   // Start hiding. We do NOTHING else yet.
+            actionType = 'SUBMIT'; 
+            modalElement.hide();   
         };
         config.submitHandler(captureProxy);
     });
@@ -33,6 +31,8 @@ function setupPrompt(config) {
         $(`#${config.inputId}`).on('keypress', e => { 
             if (e.which === 13) { 
                 e.preventDefault(); 
+                // --- FIX 2: Also blur input on Enter key ---
+                if (document.activeElement) document.activeElement.blur();
                 $(`#${config.submitBtnId}`).click(); 
             } 
         });
@@ -40,21 +40,17 @@ function setupPrompt(config) {
 
     // --- MODAL EVENTS ---
     $(modalElement._element).on('show.bs.modal', () => {
-        // Reset state on open
         actionType = 'CANCEL'; 
         submissionData = null;
         config.onShow?.();
     });
 
-    // --- THE FIX: LOGIC RUNS ONLY AFTER ANIMATION ENDS ---
     $(modalElement._element).on('hidden.bs.modal', () => {
         config.onHide?.();
 
         if (actionType === 'SUBMIT') {
-            // The modal is fully hidden. Now it is safe to run logic that might re-open it.
             if (currentVerifyCallback) currentVerifyCallback(submissionData);
         } else {
-            // The user clicked X or Cancel
             if (currentCancelCallback) currentCancelCallback();
             currentVerifyCallback = null;
             currentCancelCallback = null;
@@ -68,8 +64,13 @@ function setupPrompt(config) {
         errorMsg.text(errText || '');
         if(config.inputId) $(`#${config.inputId}`).val('');
         
-        actionType = 'CANCEL'; // Default to cancel unless button clicked
+        actionType = 'CANCEL'; 
         modalElement.show();
+        
+        // Ensure input gets focus AFTER modal is shown (prevents premature focus error)
+        if(config.inputId) {
+            setTimeout(() => $(`#${config.inputId}`).focus(), 500);
+        }
         
         if (errText) shakeModal(cardElement);
     };
@@ -79,15 +80,15 @@ function setupPrompt(config) {
         errorMsg.text(msg);
         if(config.inputId) $(`#${config.inputId}`).val('').focus();
         
-        // No timeout needed. We are guaranteed to be hidden here.
-        actionType = 'CANCEL'; // Reset action so next hide is a cancel unless clicked
+        actionType = 'CANCEL'; 
         modalElement.show(); 
         shakeModal(cardElement);
     };
 
     window[config.globalStopFn] = () => {
-        // This is called on success. We just ensure we don't trigger the cancel callback.
-        // Since the modal is likely already hidden (for the progress bar), this ensures state is clean.
+        // --- FIX 3: Remove focus if programmatically closing ---
+        if (document.activeElement) document.activeElement.blur();
+        
         actionType = 'SUBMIT'; 
         modalElement.hide();
     };

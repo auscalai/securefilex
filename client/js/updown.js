@@ -167,12 +167,20 @@ upload.modules.addmodule({
             console.log(`[Client-DEBUG] Face Captured. Sending Probe to Server for DeepFace Verification...`);
             progress('verifying_face');
             
+            // --- START TIMER FOR FACE VERIFICATION ---
+            const startTime = performance.now();
+
             fetch('/verify_face/' + identResult.ident, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ faceDataUri: faceDataUri })
             })
             .then(response => {
+                // --- STOP TIMER ---
+                const endTime = performance.now();
+                const duration = (endTime - startTime).toFixed(2);
+                console.log(`%c[Performance] Face Verification Latency: ${duration} ms`, 'color: #d63384; font-weight: bold; font-size: 1.1em;');
+
                 if (response.ok) {
                     console.log(`%c[Client-DEBUG] Server Verification PASSED (Face Match).`, 'color: #198754; font-weight: bold;');
                     console.log(`[Client-DEBUG] Server is releasing the file stream...`);
@@ -200,7 +208,7 @@ upload.modules.addmodule({
 
         window.getFaceScan(verifyCallback, cancelCallback);
     },
-    
+
     handleTOTPAuthDownload: function(identResult, seed, progress, done) {
         if (typeof window.getTOTPCode !== 'function') return progress('error');
 
