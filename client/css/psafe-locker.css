@@ -214,3 +214,28 @@ body, html {
     50% { content: '..'; }
     75% { content: '...'; }
 }
+
+#downloaddetails {
+    min-height: 0;      /* Critical for Flexbox to allow shrinking */
+    overflow: hidden;   /* Hide overflow to prevent scrollbars */
+    position: relative;
+    width: 100%;
+}
+
+/* 2. Constrain Images and Videos to fit within the container */
+#downloaddetails img, 
+#downloaddetails video {
+    max-height: 100%;    /* Never exceed the height of the middle area */
+    max-width: 100%;     /* Never exceed width */
+    width: auto;         /* Maintain aspect ratio based on height */
+    height: auto;        /* Maintain aspect ratio */
+    object-fit: contain; /* Ensure the whole image is visible without cropping */
+    display: block;
+    margin: 0 auto;      /* Center horizontally */
+}
+
+/* 3. Ensure the text editor (for memos) still fills the space */
+#downloaddetails .memo-editor-area {
+    height: 100%;
+    width: 100%;
+}
