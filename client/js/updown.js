@@ -13,9 +13,12 @@ upload.modules.addmodule({
 
         const verifyCallback = (password) => {
             progress('decrypting');
+            
+            // --- FIX: Added .progress(progress) here to bridge worker updates to UI ---
             crypt.decrypt(cachedData, seed, password)
+                .progress(progress) 
                 .done(result => {
-                    window.stopPasswordPrompt(); // New function in download.js
+                    window.stopPasswordPrompt(); 
                     done(result);
                 })
                 .fail(err => {
@@ -199,7 +202,8 @@ upload.modules.addmodule({
             .progress(progress)
             .fail(err => {
                 console.error("Encryption failed:", err);
-                if (progress) progress('error');
+                // FIX: Pass the specific error detail to the progress handler
+                if (progress) progress({ status: 'error', detail: err });
             });
     }
 });

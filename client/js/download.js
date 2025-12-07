@@ -12,9 +12,21 @@ function setupPrompt(config) {
     const modalElement = new bootstrap.Modal(document.getElementById(config.modalId));
     const cardElement = modalElement._element.querySelector('.modal-content');
     const errorMsg = $(`#${config.errorMsgId}`);
+    
+    // State variables
     let currentVerifyCallback, currentCancelCallback;
+    let shouldFireCancel = true; 
 
-    $(`#${config.submitBtnId}`).on('click', () => config.submitHandler(currentVerifyCallback));
+    // --- BUTTON CLICK HANDLER ---
+    $(`#${config.submitBtnId}`).on('click', () => {
+        const successProxy = (data) => {
+            shouldFireCancel = false; 
+            modalElement.hide();      
+            if (currentVerifyCallback) currentVerifyCallback(data); 
+        };
+        config.submitHandler(successProxy);
+    });
+
     if (config.inputId) {
         $(`#${config.inputId}`).on('keypress', e => { 
             if (e.which === 13) { 
@@ -24,29 +36,46 @@ function setupPrompt(config) {
         });
     }
 
-    $(modalElement._element).on('show.bs.modal', () => config.onShow?.());
-    $(modalElement._element).on('hidden.bs.modal', () => {
-        config.onHide?.();
-        if (currentCancelCallback) currentCancelCallback();
-        currentVerifyCallback = null;
-        currentCancelCallback = null;
+    // --- MODAL EVENTS ---
+    $(modalElement._element).on('show.bs.modal', () => {
+        shouldFireCancel = true; 
+        config.onShow?.();
     });
 
+    $(modalElement._element).on('hidden.bs.modal', () => {
+        config.onHide?.();
+        if (shouldFireCancel && currentCancelCallback) {
+            currentCancelCallback();
+        }
+        if (shouldFireCancel) {
+            currentVerifyCallback = null;
+            currentCancelCallback = null;
+        }
+    });
+
+    // --- GLOBAL API HOOKS ---
     window[config.globalGetFn] = (verifyCb, cancelCb, errText) => {
         currentVerifyCallback = verifyCb;
         currentCancelCallback = cancelCb;
         errorMsg.text(errText || '');
         if(config.inputId) $(`#${config.inputId}`).val('');
+        shouldFireCancel = true;
         modalElement.show();
         if (errText) shakeModal(cardElement);
     };
+
     window[config.globalErrorFn] = (msg) => {
         config.onError?.();
         errorMsg.text(msg);
         if(config.inputId) $(`#${config.inputId}`).val('').focus();
+        modalElement.show(); 
         shakeModal(cardElement);
     };
-    window[config.globalStopFn] = () => modalElement.hide();
+
+    window[config.globalStopFn] = () => {
+        shouldFireCancel = false; 
+        modalElement.hide();
+    };
 }
 
 
@@ -97,7 +126,7 @@ upload.modules.addmodule({
             submitHandler: (cb) => {
                 const password = $('#decryption_password').val();
                 if (!password) return window.showPasswordError("Please enter a password.");
-                if (cb) { $('#password_error_msg').text('Decrypting...'); cb(password); }
+                if (cb) cb(password);
             }
         });
         
@@ -195,10 +224,29 @@ upload.modules.addmodule({
             viewbtn: view.find('#inbrowserbtn'),
             newupload: view.find('#newupload'),
             editpaste: view.find('#editpaste'),
-            title: $('title'),
-            content: { main: $('<h1>').prop('id', 'downloadprogress').addClass('text-white-50').text('Initializing...') }
+            title: $('title')
         };
-        this._.detailsarea.empty().append(this._.content.main);
+        
+        // Progress Bar Structure
+        const progressHtml = `
+            <div id="download_progress_container" class="boxarea" style="width: 100%; max-width: 450px;">
+                <h1 id="download_status_text">Initializing...</h1>
+                <div class="progress mt-3" style="height: 10px; background-color: rgba(0,0,0,0.2);">
+                    <div id="download_progress_bar" class="progress-bar" role="progressbar" style="width: 0%;"></div>
+                </div>
+                <h1 id="download_percentage_text" class="mt-3">0%</h1>
+            </div>
+        `;
+        
+        this._.detailsarea.empty().append(progressHtml);
+        
+        this._.content = {
+            container: this._.detailsarea.find('#download_progress_container'),
+            status: this._.detailsarea.find('#download_status_text'),
+            bar: this._.detailsarea.find('#download_progress_bar'),
+            percent: this._.detailsarea.find('#download_percentage_text')
+        };
+
         $('#footer').hide();
     },
     initroute: function (content) {
@@ -208,7 +256,13 @@ upload.modules.addmodule({
         this._.btns.hide();
         this._.editpaste.addClass('d-none');
         this._.newupload.hide();
-        this._.content.main.text('Initializing Locker Download...');
+        
+        if (this._.content) {
+            this._.content.status.text('Initializing Locker Download...');
+            this._.content.bar.removeClass('bg-danger').css('width', '0%');
+            this._.content.percent.text('0%');
+        }
+        
         this._.deletebtn.hide();
         upload.updown.download(content, this.progress.bind(this), this.downloaded.bind(this));
     },
@@ -246,6 +300,7 @@ upload.modules.addmodule({
 
         this._.dlbtn.prop('href', url).prop('download', data.header.name);
         this._.viewbtn.prop('href', url).toggle(!!association);
+        
         this._.detailsarea.empty();
 
         if (association === 'image' || association === 'svg') {
@@ -284,21 +339,65 @@ upload.modules.addmodule({
         window.location.hash = '#edit';
     },
     progress: function (e) {
-        if (!this._.content?.main) return;
+        if (!this._.content) return;
+        
         const messages = {
-            'decrypting': 'Decrypting Locker...', 'error': 'Locker Not Found or Expired.',
-            'waiting_for_password': 'Password Required.', 'waiting_for_face': 'Facial Verification Required.',
-            'verifying_face': 'Verifying Face...', 'waiting_for_totp': 'TOTP Code Required.',
-            'verifying_totp': 'Verifying TOTP...', 'cancelled': 'Decryption Cancelled.'
+            'decrypting': 'Decrypting Locker', 
+            'error': 'Locker Not Found or Expired',
+            'waiting_for_password': 'Password Required', 
+            'waiting_for_face': 'Facial Verification Required',
+            'verifying_face': 'Verifying Face', 
+            'waiting_for_totp': 'TOTP Code Required',
+            'verifying_totp': 'Verifying TOTP', 
+            'cancelled': 'Decryption Cancelled'
         };
+
         if (typeof e === 'string') {
-            this._.content.main.text(messages[e] || 'An error occurred.');
-            if (['error', 'cancelled'].includes(e)) this._.newupload.show();
+            let msg = messages[e] || 'An error occurred';
+            
+            // Add dots to "Verifying..." states
+            let htmlContent = msg;
+            if (e.startsWith('verifying') || e.startsWith('decrypting')) {
+                htmlContent += '<span class="animated-dots"></span>';
+            }
+
+            this._.content.status.html(htmlContent);
+            
+            if (['error', 'cancelled'].includes(e)) {
+                this._.content.bar.addClass('bg-danger').css('width', '100%');
+                this._.content.percent.text('!');
+                this._.newupload.show();
+            } else if (e === 'decrypting') {
+                this._.content.bar.removeClass('bg-danger progress-bar-striped progress-bar-animated').css('width', '0%');
+                this._.content.percent.text('0%');
+                // Reset tracker for numerical updates
+                this._.lastType = 'decrypting'; 
+            } else if (e.startsWith('waiting')) {
+                this._.content.bar.css('width', '100%').addClass('progress-bar-striped progress-bar-animated');
+                this._.content.percent.text('Waiting...');
+            } else {
+                 this._.content.bar.removeClass('bg-danger progress-bar-striped progress-bar-animated');
+            }
         } else {
-            const text = e.eventsource !== 'encrypt' ? 'Downloading Locker' : 'Decrypting Locker';
+            const type = e.eventsource !== 'encrypt' ? 'Downloading Locker' : 'Decrypting Locker';
+            
+            // Only update HTML if changed (prevents animation reset)
+            if (this._.lastType !== type) {
+                this._.lastType = type;
+                this._.content.status.html(`${type}<span class="animated-dots"></span>`);
+            }
+
             const percent = (e.loaded / e.total) * 100;
-            const percentText = (percent >= 99) ? '99% (Verifying...)' : Math.floor(percent) + '%';
-            this._.content.main.text(`${text} ${percentText}`);
+            const percentInt = Math.floor(percent);
+            
+            this._.content.bar.removeClass('bg-danger progress-bar-striped progress-bar-animated')
+                              .css('width', `${percent}%`);
+            
+            if (percent >= 99) {
+                this._.content.percent.text('Finalizing...');
+            } else {
+                this._.content.percent.text(`${percentInt}%`);
+            }
         }
     }
 });

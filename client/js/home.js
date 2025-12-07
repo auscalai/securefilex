@@ -293,6 +293,10 @@ upload.modules.addmodule({
         this._.twofaChoiceModal.hide();
     },
     skip2FA: function() {
+        const btn = $('#skip_2fa_btn');
+        btn.html('<div class="spinner-border spinner-border-sm me-2" role="status"></div>Starting...').prop('disabled', true);
+        
+        // Wait for modal transition then start
         $(this._.twofaChoiceModal._element).one('hidden.bs.modal', () => this.startUpload(null));
         this._.twofaChoiceModal.hide();
     },
@@ -325,17 +329,21 @@ upload.modules.addmodule({
         this.webcam.start({ width: { ideal: 4096 }, height: { ideal: 2160 } })
             .catch(err => errorMsg.text("Could not start webcam. Please allow camera access."));
     },
-    // Replace the entire captureFace function in home.js with this new version.
-
     captureFace: function() {
         const videoElement = document.getElementById('face_webcam');
         const canvasElement = document.getElementById('face_canvas');
+        const btn = $('#capture_face_btn'); // Get the button
         
         if (!this.webcam || videoElement.readyState < 2) {
             this._.faceErrorMsg.text("Webcam is not ready. Please wait.");
             this.shakeModal(this._.faceCard);
             return;
         }
+
+        // 1. VISUAL FEEDBACK: Show spinner and disable button
+        const originalBtnText = btn.html();
+        btn.html('<div class="spinner-border spinner-border-sm me-2" role="status"></div>Processing...').prop('disabled', true);
+        this._.faceErrorMsg.text(''); // Clear previous errors
 
         const context = canvasElement.getContext('2d');
         context.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
@@ -344,12 +352,12 @@ upload.modules.addmodule({
         if (!faceDataUri || faceDataUri.length < 100) {
             this._.faceErrorMsg.text("Failed to capture image. Please try again.");
             this.shakeModal(this._.faceCard);
+            btn.html(originalBtnText).prop('disabled', false); // Reset button
             return;
         }
 
-        // --- NEW VALIDATION LOGIC ---
-        this._.faceSpinner.removeClass('d-none');
-        this._.faceErrorMsg.text('Verifying face...');
+        // Show verifying message
+        this._.faceErrorMsg.text('Verifying face with server...');
 
         $.ajax({
             type: 'POST',
@@ -359,33 +367,30 @@ upload.modules.addmodule({
             dataType: 'json',
         }).done(response => {
             if (response.valid) {
-                // Face is valid, now proceed with encryption and upload
-                this._.faceErrorMsg.text('Face is valid! Encrypting...');
+                this._.faceErrorMsg.text('Face accepted. Encrypting...');
                 $.get('/public_key')
                     .done(keyData => {
                         crypt.encryptFace(keyData.key, faceDataUri)
                             .done(result => this.startUpload({ type: 'face', data: result.encryptedFace }))
                             .fail(() => {
-                                this._.faceSpinner.addClass('d-none');
                                 this._.faceErrorMsg.text("A crypto error occurred.");
+                                btn.html(originalBtnText).prop('disabled', false); // Reset button
                             });
                     })
                     .fail(() => {
-                        this._.faceSpinner.addClass('d-none');
                         this._.faceErrorMsg.text("Error: Could not contact server for encryption key.");
+                        btn.html(originalBtnText).prop('disabled', false); // Reset button
                     });
             } else {
-                // This case should ideally be handled by .fail(), but we'll include it for completeness
-                this._.faceSpinner.addClass('d-none');
                 this._.faceErrorMsg.text(response.error || "Face could not be validated.");
                 this.shakeModal(this._.faceCard);
+                btn.html(originalBtnText).prop('disabled', false); // Reset button
             }
         }).fail(jqXHR => {
-            // Face is invalid (no face, spoof, etc.) or a server error occurred
-            this._.faceSpinner.addClass('d-none');
             const errorMsg = jqXHR.responseJSON?.error || "An unknown validation error occurred.";
             this._.faceErrorMsg.text(errorMsg);
             this.shakeModal(this._.faceCard);
+            btn.html(originalBtnText).prop('disabled', false); // Reset button
         });
     },
     startTOTPModal: function() {
@@ -403,12 +408,20 @@ upload.modules.addmodule({
     formatTOTPInput: function(e) { e.target.value = e.target.value.replace(/\D/g, ''); },
     verifyTOTP: function() {
         const code = this._.totpVerifyInput.val();
+        const btn = $('#verify_totp_btn'); // Get the button
+
         if (code.length !== 6) {
             this._.totpErrorMsg.text("Please enter a 6-digit code.");
             this.shakeModal(this._.totpCard);
             return;
         }
+
+        // 1. VISUAL FEEDBACK: Show spinner
+        const originalBtnText = btn.html();
+        btn.html('<div class="spinner-border spinner-border-sm me-2" role="status"></div>Verifying...').prop('disabled', true);
+        
         this._.totpErrorMsg.text('Verifying...');
+        
          $.ajax({
             type: 'POST',
             url: '/verify_totp_setup',
@@ -421,33 +434,58 @@ upload.modules.addmodule({
                         .done(keyData => {
                             crypt.encryptTOTP(keyData.key, this.state.totpSecret)
                                 .done(result => this.startUpload({ type: 'totp', data: result.encryptedTOTP }))
-                                .fail(() => this._.totpErrorMsg.text("A crypto error occurred."));
+                                .fail(() => {
+                                    this._.totpErrorMsg.text("A crypto error occurred.");
+                                    btn.html(originalBtnText).prop('disabled', false);
+                                });
                         })
-                        .fail(() => this._.totpErrorMsg.text("Error: Could not contact server."));
+                        .fail(() => {
+                            this._.totpErrorMsg.text("Error: Could not contact server.");
+                            btn.html(originalBtnText).prop('disabled', false);
+                        });
                 } else {
                     this._.totpErrorMsg.text("Invalid code. Please try again.");
                     this.shakeModal(this._.totpCard);
+                    btn.html(originalBtnText).prop('disabled', false);
                 }
             },
             error: () => {
                 this._.totpErrorMsg.text("Verification failed. Please try again.");
                 this.shakeModal(this._.totpCard);
+                btn.html(originalBtnText).prop('disabled', false);
             }
         });
     },
     startUpload: function(twoFAData) {
         if (this.webcam) this.webcam.stop();
+        
         const activeModal = [this._.facemodal, this._.totpmodal, this._.twofaChoiceModal].find(m => m._isShown);
+        
         const showProgress = () => {
-            this._.uploadview.addClass('d-none');
+            // 1. FIX: Make the main container visible again (it was hidden in doupload)
+            this._.uploadview.removeClass('d-none');
+            
+            // 2. Hide the drag-and-drop box (pastearea)
+            this._.pastearea.addClass('d-none');
+
+            // 3. Show the progress box
             this._.progress.main.removeClass('d-none');
+            
+            // Reset Progress UI
             this._.progress.bg.css('width', '0%');
             this._.progress.amount.text('0%');
+            this._.progress.type.text('Initializing Encryption...');
+            
+            // Hide the top bar (New Paste button)
             this._.newpaste.closest('.topbar').addClass('d-none');
+            
+            // Start the actual upload/encryption
             upload.updown.upload(this._.uploadblob, this.progress.bind(this), this.uploaded.bind(this), this.state.password, twoFAData);
             this._.uploadblob = null;
         };
+
         if (activeModal) {
+            // Wait for the modal to fully hide before showing the progress bar
             $(activeModal._element).one('hidden.bs.modal', showProgress);
             activeModal.hide();
         } else {
@@ -455,9 +493,51 @@ upload.modules.addmodule({
         }
     },
     progress: function(e) {
-        const type = e.eventsource !== 'encrypt' ? 'Uploading Locker' : 'Encrypting Locker';
+        // 1. Handle Error Objects
+        if (typeof e === 'object' && e.status === 'error') {
+            let userMsg = "Upload Failed";
+            if (e.detail === "Invalid array length" || (e.detail && e.detail.includes("Memory"))) {
+                userMsg = "Error: File too large (Browser Memory Limit)";
+            } else {
+                userMsg = "Error: " + (e.detail || "Unknown error");
+            }
+            
+            this._.progress.type.text(userMsg); // No dots for error
+            this._.progress.bg.addClass('bg-danger').css('width', '100%');
+            this._.progress.amount.text('!');
+            this._.newpaste.closest('.topbar').removeClass('d-none');
+            return;
+        }
+
+        // 2. Handle Legacy Strings
+        if (typeof e === 'string') {
+            const msg = e === 'error' ? 'Upload Failed' : e;
+            this._.progress.type.text(msg);
+            if (e === 'error') {
+                this._.progress.bg.addClass('bg-danger');
+                this._.newpaste.closest('.topbar').removeClass('d-none');
+            }
+            return;
+        }
+        
+        // 3. Handle Progress & Animated Dots
+        let type;
+        if (e.eventsource === 'reading') {
+            type = 'Reading File';
+        } else if (e.eventsource === 'encrypt') {
+            type = 'Encrypting Locker';
+        } else {
+            type = 'Uploading Locker';
+        }
+        
+        // Only update the HTML if the status type has changed (prevents animation reset)
+        if (this._.lastType !== type) {
+            this._.lastType = type;
+            this._.progress.type.html(`${type}<span class="animated-dots"></span>`);
+        }
+        
         const percent = Math.floor((e.loaded / e.total) * 100);
-        this._.progress.type.text(type);
+        
         this._.progress.bg.css('width', `${percent}%`);
         this._.progress.amount.text(`${percent}%`);
     },

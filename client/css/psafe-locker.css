@@ -198,3 +198,19 @@ body, html {
     position: static; /* Overrides the 'position: fixed' rule */
     flex-shrink: 0;   /* Prevents the top bar from shrinking */
 }
+
+/* Animated Dots for Status Text */
+.animated-dots::after {
+    content: '';
+    animation: typing 1.5s infinite step-start;
+    display: inline-block;
+    width: 1em; /* Reserve space so text doesn't jump */
+    text-align: left;
+}
+
+@keyframes typing {
+    0% { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
+}

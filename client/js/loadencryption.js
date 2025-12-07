@@ -62,6 +62,21 @@ crypt.encrypt = function (file, name, password) {
     var blob = new Blob([str2ab(header), zero, file]);
     var promise = getpromise();
     var fr = new FileReader();
+    
+    // --- FIX: Report File Reading Progress ---
+    fr.onprogress = function(e) {
+        if (e.lengthComputable) {
+            promise.notify({
+                id: promise.id,
+                eventsource: 'reading', // New event source
+                loaded: e.loaded,
+                total: e.total,
+                type: 'progress'
+            });
+        }
+    };
+    // ----------------------------------------
+
     fr.onload = function () {
         worker.postMessage({
             'action': 'encrypt',
