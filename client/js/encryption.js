@@ -6,6 +6,32 @@ importScripts('../deps/bn.js');
 importScripts('../deps/ecc.js');
 importScripts('../deps/convenience.js');
 
+function bitsToUint8Array(bitArray) {
+    var len = sjcl.bitArray.bitLength(bitArray);
+    var bytes = len / 8;
+    var out = new Uint8Array(bytes);
+    var tmp;
+    
+    for (var i = 0; i < bitArray.length; i++) {
+        tmp = bitArray[i];
+        // Write 4 bytes from the 32-bit word
+        var base = i * 4;
+        if (base + 3 < bytes) {
+            out[base]     = (tmp >>> 24) & 0xff;
+            out[base + 1] = (tmp >>> 16) & 0xff;
+            out[base + 2] = (tmp >>> 8)  & 0xff;
+            out[base + 3] =  tmp         & 0xff;
+        } else {
+            // Handle the edge case for the very last bytes
+            var remaining = bytes - base;
+            for (var z = 0; z < remaining; z++) {
+                out[base + z] = (tmp >>> (24 - z * 8)) & 0xff;
+            }
+        }
+    }
+    return out;
+}
+
 function parametersfrombits(seed) {
     var out = sjcl.hash.sha512.hash(seed);
     return {
@@ -28,11 +54,19 @@ function parameters(seed) {
 function encrypt(file, seed, id, password) {
     var params = parameters(seed);
     var aes_key = sjcl.misc.pbkdf2(password, params.seed, 1000, 256);
+    
+    // Convert input to bits (This might still be heavy, but usually passes)
     var uarr = new Uint8Array(file);
-    var before = sjcl.codec.bytes.toBits(uarr);
+    var before = sjcl.codec.bytes.toBits(uarr); 
+    
     var prp = new sjcl.cipher.aes(aes_key);
     var after = sjcl.mode.ccm.encrypt(prp, before, params.iv);
-    var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
+    
+    // --- FIX: Use the optimized converter ---
+    // OLD: var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
+    var afterarray = bitsToUint8Array(after); 
+    // ----------------------------------------
+
     var encryptedBlob = new Blob([afterarray], { type: 'application/octet-stream' });
     postMessage({
         'id': id,
@@ -64,7 +98,10 @@ function decrypt(file, seed, id, password) {
     var before = sjcl.codec.bytes.toBits(uarr);
     var prp = new sjcl.cipher.aes(aes_key);
     var after = sjcl.mode.ccm.decrypt(prp, before, params.iv);
-    var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
+    
+    // --- FIX: Use the optimized converter ---
+    // OLD: var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
+    var afterarray = bitsToUint8Array(after);
     var header = '';
     var headerview = new DataView(afterarray.buffer);
     var i = 0;
