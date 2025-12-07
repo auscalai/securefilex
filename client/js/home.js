@@ -332,7 +332,7 @@ upload.modules.addmodule({
     captureFace: function() {
         const videoElement = document.getElementById('face_webcam');
         const canvasElement = document.getElementById('face_canvas');
-        const btn = $('#capture_face_btn'); // Get the button
+        const btn = $('#capture_face_btn'); 
         
         if (!this.webcam || videoElement.readyState < 2) {
             this._.faceErrorMsg.text("Webcam is not ready. Please wait.");
@@ -340,10 +340,9 @@ upload.modules.addmodule({
             return;
         }
 
-        // 1. VISUAL FEEDBACK: Show spinner and disable button
         const originalBtnText = btn.html();
         btn.html('<div class="spinner-border spinner-border-sm me-2" role="status"></div>Processing...').prop('disabled', true);
-        this._.faceErrorMsg.text(''); // Clear previous errors
+        this._.faceErrorMsg.text(''); 
 
         const context = canvasElement.getContext('2d');
         context.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
@@ -352,12 +351,12 @@ upload.modules.addmodule({
         if (!faceDataUri || faceDataUri.length < 100) {
             this._.faceErrorMsg.text("Failed to capture image. Please try again.");
             this.shakeModal(this._.faceCard);
-            btn.html(originalBtnText).prop('disabled', false); // Reset button
+            btn.html(originalBtnText).prop('disabled', false); 
             return;
         }
 
-        // Show verifying message
         this._.faceErrorMsg.text('Verifying face with server...');
+        console.log(`[Client-DEBUG] 1. Sending Face Snapshot to DeepFace for Liveness Check...`);
 
         $.ajax({
             type: 'POST',
@@ -367,30 +366,42 @@ upload.modules.addmodule({
             dataType: 'json',
         }).done(response => {
             if (response.valid) {
-                this._.faceErrorMsg.text('Face accepted. Encrypting...');
+                console.log(`[Client-DEBUG] 2. Liveness Check PASSED. Preparing for Encryption.`);
+                this._.faceErrorMsg.text('Face accepted. Fetching Encryption Key...');
+                
+                // --- KEY EXCHANGE LOGGING ---
+                console.log(`[Client-DEBUG] 3. Requesting Server's ECC Public Key (GET /public_key)...`);
+                
                 $.get('/public_key')
                     .done(keyData => {
+                        console.log(`[Client-DEBUG] 4. Public Key Received: ${keyData.key.substring(0, 20)}...`);
+                        console.log(`[Client-DEBUG] 5. Encrypting Face Data on Client-Side using Server Key...`);
+                        
                         crypt.encryptFace(keyData.key, faceDataUri)
-                            .done(result => this.startUpload({ type: 'face', data: result.encryptedFace }))
+                            .done(result => {
+                                console.log(`[Client-DEBUG] 6. Face Data Encrypted. Starting Upload Process.`);
+                                this.startUpload({ type: 'face', data: result.encryptedFace });
+                            })
                             .fail(() => {
                                 this._.faceErrorMsg.text("A crypto error occurred.");
-                                btn.html(originalBtnText).prop('disabled', false); // Reset button
+                                btn.html(originalBtnText).prop('disabled', false); 
                             });
                     })
                     .fail(() => {
                         this._.faceErrorMsg.text("Error: Could not contact server for encryption key.");
-                        btn.html(originalBtnText).prop('disabled', false); // Reset button
+                        btn.html(originalBtnText).prop('disabled', false); 
                     });
             } else {
+                console.warn(`[Client-DEBUG] Liveness Check FAILED: ${response.error}`);
                 this._.faceErrorMsg.text(response.error || "Face could not be validated.");
                 this.shakeModal(this._.faceCard);
-                btn.html(originalBtnText).prop('disabled', false); // Reset button
+                btn.html(originalBtnText).prop('disabled', false); 
             }
         }).fail(jqXHR => {
             const errorMsg = jqXHR.responseJSON?.error || "An unknown validation error occurred.";
             this._.faceErrorMsg.text(errorMsg);
             this.shakeModal(this._.faceCard);
-            btn.html(originalBtnText).prop('disabled', false); // Reset button
+            btn.html(originalBtnText).prop('disabled', false); 
         });
     },
     startTOTPModal: function() {
@@ -408,7 +419,7 @@ upload.modules.addmodule({
     formatTOTPInput: function(e) { e.target.value = e.target.value.replace(/\D/g, ''); },
     verifyTOTP: function() {
         const code = this._.totpVerifyInput.val();
-        const btn = $('#verify_totp_btn'); // Get the button
+        const btn = $('#verify_totp_btn'); 
 
         if (code.length !== 6) {
             this._.totpErrorMsg.text("Please enter a 6-digit code.");
@@ -416,11 +427,11 @@ upload.modules.addmodule({
             return;
         }
 
-        // 1. VISUAL FEEDBACK: Show spinner
         const originalBtnText = btn.html();
         btn.html('<div class="spinner-border spinner-border-sm me-2" role="status"></div>Verifying...').prop('disabled', true);
         
         this._.totpErrorMsg.text('Verifying...');
+        console.log(`[Client-DEBUG] 1. Verifying TOTP Code (${code}) with temporary secret...`);
         
          $.ajax({
             type: 'POST',
@@ -430,10 +441,21 @@ upload.modules.addmodule({
             dataType: 'json',
             success: response => {
                 if (response.valid) {
+                    console.log(`[Client-DEBUG] 2. TOTP Valid. Fetching Encryption Key...`);
+                    
+                    // --- KEY EXCHANGE LOGGING ---
+                    console.log(`[Client-DEBUG] 3. Requesting Server's ECC Public Key (GET /public_key)...`);
+                    
                     $.get('/public_key')
                         .done(keyData => {
+                            console.log(`[Client-DEBUG] 4. Public Key Received: ${keyData.key.substring(0, 20)}...`);
+                            console.log(`[Client-DEBUG] 5. Encrypting TOTP Secret on Client-Side using Server Key...`);
+                            
                             crypt.encryptTOTP(keyData.key, this.state.totpSecret)
-                                .done(result => this.startUpload({ type: 'totp', data: result.encryptedTOTP }))
+                                .done(result => {
+                                    console.log(`[Client-DEBUG] 6. Secret Encrypted. Starting Upload Process.`);
+                                    this.startUpload({ type: 'totp', data: result.encryptedTOTP });
+                                })
                                 .fail(() => {
                                     this._.totpErrorMsg.text("A crypto error occurred.");
                                     btn.html(originalBtnText).prop('disabled', false);
@@ -444,6 +466,7 @@ upload.modules.addmodule({
                             btn.html(originalBtnText).prop('disabled', false);
                         });
                 } else {
+                    console.warn(`[Client-DEBUG] TOTP Verification Failed.`);
                     this._.totpErrorMsg.text("Invalid code. Please try again.");
                     this.shakeModal(this._.totpCard);
                     btn.html(originalBtnText).prop('disabled', false);

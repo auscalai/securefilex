@@ -108,10 +108,15 @@ function create_app(config) {
         let fields = {};
         let tmpfname = null;
 
-        busboy.on('field', (fieldname, value) => fields[fieldname] = value);
+        busboy.on('field', (fieldname, value) => {
+            fields[fieldname] = value;
+            // DEBUG: Show we received the ID but not the content
+            if (fieldname === 'ident') console.log(`[Server-DEBUG] Incoming Upload Request for Ident: ${value}`);
+        });
 
-        busboy.on('file', (fieldname, file) => {
+        busboy.on('file', (fieldname, file, filename, encoding, mimetype) => {
             if (fieldname !== 'file') return file.resume();
+            console.log(`[Server-DEBUG] Receiving file stream... (Server cannot see plaintext)`);
             try {
                 const ftmp = tmp.fileSync({ postfix: '.tmp', dir: config.path.i, keep: true });
                 tmpfname = ftmp.name;
@@ -136,11 +141,12 @@ function create_app(config) {
                     console.error("Error renaming file:", err);
                     return res.status(500).send("Server Error");
                 }
-                fs.stat(finalPath, (statErr) => {
-                    if (statErr) {
-                        console.error(`File not available after rename for ident ${fields.ident}:`, statErr);
-                        return res.status(500).send("Server Error");
-                    }
+                fs.stat(finalPath, (statErr, stats) => {
+                    if (statErr) return res.status(500).send("Server Error");
+                    
+                    console.log(`[Server-DEBUG] File stored successfully at ${finalPath}`);
+                    console.log(`[Server-DEBUG] File Size on Disk: ${stats.size} bytes`);
+                    
                     const delhmac = crypto.createHmac('sha256', config.delete_key).update(fields.ident).digest('hex');
                     res.json({ delkey: delhmac });
                 });

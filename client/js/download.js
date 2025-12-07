@@ -15,16 +15,18 @@ function setupPrompt(config) {
     
     // State variables
     let currentVerifyCallback, currentCancelCallback;
-    let shouldFireCancel = true; 
+    let actionType = 'CANCEL'; // Can be 'CANCEL' or 'SUBMIT'
+    let submissionData = null; // Store data to pass after hide
 
     // --- BUTTON CLICK HANDLER ---
     $(`#${config.submitBtnId}`).on('click', () => {
-        const successProxy = (data) => {
-            shouldFireCancel = false; 
-            modalElement.hide();      
-            if (currentVerifyCallback) currentVerifyCallback(data); 
+        // 1. Capture the data immediately
+        const captureProxy = (data) => {
+            submissionData = data;
+            actionType = 'SUBMIT'; // Mark as a submit action
+            modalElement.hide();   // Start hiding. We do NOTHING else yet.
         };
-        config.submitHandler(successProxy);
+        config.submitHandler(captureProxy);
     });
 
     if (config.inputId) {
@@ -38,16 +40,22 @@ function setupPrompt(config) {
 
     // --- MODAL EVENTS ---
     $(modalElement._element).on('show.bs.modal', () => {
-        shouldFireCancel = true; 
+        // Reset state on open
+        actionType = 'CANCEL'; 
+        submissionData = null;
         config.onShow?.();
     });
 
+    // --- THE FIX: LOGIC RUNS ONLY AFTER ANIMATION ENDS ---
     $(modalElement._element).on('hidden.bs.modal', () => {
         config.onHide?.();
-        if (shouldFireCancel && currentCancelCallback) {
-            currentCancelCallback();
-        }
-        if (shouldFireCancel) {
+
+        if (actionType === 'SUBMIT') {
+            // The modal is fully hidden. Now it is safe to run logic that might re-open it.
+            if (currentVerifyCallback) currentVerifyCallback(submissionData);
+        } else {
+            // The user clicked X or Cancel
+            if (currentCancelCallback) currentCancelCallback();
             currentVerifyCallback = null;
             currentCancelCallback = null;
         }
@@ -59,8 +67,10 @@ function setupPrompt(config) {
         currentCancelCallback = cancelCb;
         errorMsg.text(errText || '');
         if(config.inputId) $(`#${config.inputId}`).val('');
-        shouldFireCancel = true;
+        
+        actionType = 'CANCEL'; // Default to cancel unless button clicked
         modalElement.show();
+        
         if (errText) shakeModal(cardElement);
     };
 
@@ -68,12 +78,17 @@ function setupPrompt(config) {
         config.onError?.();
         errorMsg.text(msg);
         if(config.inputId) $(`#${config.inputId}`).val('').focus();
+        
+        // No timeout needed. We are guaranteed to be hidden here.
+        actionType = 'CANCEL'; // Reset action so next hide is a cancel unless clicked
         modalElement.show(); 
         shakeModal(cardElement);
     };
 
     window[config.globalStopFn] = () => {
-        shouldFireCancel = false; 
+        // This is called on success. We just ensure we don't trigger the cancel callback.
+        // Since the modal is likely already hidden (for the progress bar), this ensures state is clean.
+        actionType = 'SUBMIT'; 
         modalElement.hide();
     };
 }
@@ -126,6 +141,7 @@ upload.modules.addmodule({
             submitHandler: (cb) => {
                 const password = $('#decryption_password').val();
                 if (!password) return window.showPasswordError("Please enter a password.");
+                // We pass the password to the proxy, which sets submissionData and hides the modal
                 if (cb) cb(password);
             }
         });
@@ -177,7 +193,11 @@ upload.modules.addmodule({
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
                 const faceDataUri = canvas.toDataURL('image/png');
                 if (!faceDataUri) return window.showFaceScanError("Failed to capture image.");
-                if (cb) { $('#download_face_spinner').removeClass('d-none'); $('#download_face_error_msg').text('Verifying...'); cb(faceDataUri); }
+                
+                // Show visual feedback immediately, even though we hide
+                $('#download_face_spinner').removeClass('d-none');
+                
+                if (cb) cb(faceDataUri);
             }
         });
 
@@ -205,7 +225,7 @@ upload.modules.addmodule({
             submitHandler: (cb) => {
                 const code = $('#download_totp_input').val();
                 if (code.length !== 6) return window.showTOTPError("Please enter a 6-digit code.");
-                if (cb) { $('#download_totp_error_msg').text('Verifying...'); cb(code); }
+                if (cb) cb(code);
             }
         });
         
@@ -227,7 +247,6 @@ upload.modules.addmodule({
             title: $('title')
         };
         
-        // Progress Bar Structure
         const progressHtml = `
             <div id="download_progress_container" class="boxarea" style="width: 100%; max-width: 450px;">
                 <h1 id="download_status_text">Initializing...</h1>
@@ -355,7 +374,6 @@ upload.modules.addmodule({
         if (typeof e === 'string') {
             let msg = messages[e] || 'An error occurred';
             
-            // Add dots to "Verifying..." states
             let htmlContent = msg;
             if (e.startsWith('verifying') || e.startsWith('decrypting')) {
                 htmlContent += '<span class="animated-dots"></span>';
@@ -370,8 +388,10 @@ upload.modules.addmodule({
             } else if (e === 'decrypting') {
                 this._.content.bar.removeClass('bg-danger progress-bar-striped progress-bar-animated').css('width', '0%');
                 this._.content.percent.text('0%');
-                // Reset tracker for numerical updates
                 this._.lastType = 'decrypting'; 
+            } else if (['waiting_for_password', 'waiting_for_totp', 'waiting_for_face'].includes(e)) {
+                this._.content.bar.removeClass('bg-danger progress-bar-striped progress-bar-animated').css('width', '0%');
+                this._.content.percent.text('0%');
             } else if (e.startsWith('waiting')) {
                 this._.content.bar.css('width', '100%').addClass('progress-bar-striped progress-bar-animated');
                 this._.content.percent.text('Waiting...');
@@ -381,7 +401,6 @@ upload.modules.addmodule({
         } else {
             const type = e.eventsource !== 'encrypt' ? 'Downloading Locker' : 'Decrypting Locker';
             
-            // Only update HTML if changed (prevents animation reset)
             if (this._.lastType !== type) {
                 this._.lastType = type;
                 this._.content.status.html(`${type}<span class="animated-dots"></span>`);

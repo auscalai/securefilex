@@ -6,34 +6,18 @@ importScripts('../deps/bn.js');
 importScripts('../deps/ecc.js');
 importScripts('../deps/convenience.js');
 
-function bitsToUint8Array(bitArray) {
-    var len = sjcl.bitArray.bitLength(bitArray);
-    var bytes = len / 8;
-    var out = new Uint8Array(bytes);
-    var tmp;
-    
-    for (var i = 0; i < bitArray.length; i++) {
-        tmp = bitArray[i];
-        // Write 4 bytes from the 32-bit word
-        var base = i * 4;
-        if (base + 3 < bytes) {
-            out[base]     = (tmp >>> 24) & 0xff;
-            out[base + 1] = (tmp >>> 16) & 0xff;
-            out[base + 2] = (tmp >>> 8)  & 0xff;
-            out[base + 3] =  tmp         & 0xff;
-        } else {
-            // Handle the edge case for the very last bytes
-            var remaining = bytes - base;
-            for (var z = 0; z < remaining; z++) {
-                out[base + z] = (tmp >>> (24 - z * 8)) & 0xff;
-            }
-        }
-    }
-    return out;
+// Helper to print bytes for debugging
+function previewBytes(name, bitArray) {
+    var hex = sjcl.codec.hex.fromBits(bitArray);
+    console.log(`[Worker-DEBUG] ${name} (First 32 chars): ${hex.substring(0, 32)}...`);
 }
 
 function parametersfrombits(seed) {
     var out = sjcl.hash.sha512.hash(seed);
+    // DEBUG: Show derived params
+    console.log('[Worker-DEBUG] Key Derivation Complete.');
+    console.log(`[Worker-DEBUG] IV Generated: ${sjcl.codec.hex.fromBits(sjcl.bitArray.bitSlice(out, 256, 384))}`);
+    
     return {
         'seed': seed,
         'key': sjcl.bitArray.bitSlice(out, 0, 256),
@@ -52,22 +36,37 @@ function parameters(seed) {
 }
 
 function encrypt(file, seed, id, password) {
+    console.log('------------------------------------------------');
+    console.log('[Worker-DEBUG] STARTING ENCRYPTION JOB');
+    console.log(`[Worker-DEBUG] Input File Size: ${file.byteLength} bytes`);
+    
     var params = parameters(seed);
+    
+    console.log(`[Worker-DEBUG] Password Hashing (PBKDF2) starting...`);
     var aes_key = sjcl.misc.pbkdf2(password, params.seed, 1000, 256);
-    
-    // Convert input to bits (This might still be heavy, but usually passes)
+    previewBytes("Derived AES Key", aes_key);
+
     var uarr = new Uint8Array(file);
-    var before = sjcl.codec.bytes.toBits(uarr); 
-    
+    // Proof of Plaintext
+    console.log(`[Worker-DEBUG] PLAINTEXT PREVIEW (First 10 bytes): [${uarr.subarray(0, 10).join(', ')}]`);
+
+    var before = sjcl.codec.bytes.toBits(uarr);
     var prp = new sjcl.cipher.aes(aes_key);
+    
+    console.log('[Worker-DEBUG] Running AES-CCM Encryption...');
     var after = sjcl.mode.ccm.encrypt(prp, before, params.iv);
     
-    // --- FIX: Use the optimized converter ---
-    // OLD: var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
-    var afterarray = bitsToUint8Array(after); 
-    // ----------------------------------------
-
+    var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
+    
+    // Proof of Ciphertext
+    console.log(`[Worker-DEBUG] CIPHERTEXT PREVIEW (First 10 bytes): [${afterarray.subarray(0, 10).join(', ')}]`);
+    console.log('[Worker-DEBUG] Notice that Plaintext bytes != Ciphertext bytes. Data is secure.');
+    
     var encryptedBlob = new Blob([afterarray], { type: 'application/octet-stream' });
+    
+    console.log(`[Worker-DEBUG] Encryption Finished. Blob created: ${encryptedBlob.size} bytes.`);
+    console.log('------------------------------------------------');
+
     postMessage({
         'id': id,
         'type': 'encrypt_result',
@@ -82,9 +81,17 @@ var fileheader = [
 ];
 
 function decrypt(file, seed, id, password) {
+    console.log('%c[Worker-DEBUG] --- STARTING DECRYPTION JOB ---', 'color: #198754; font-weight: bold;');
+    
     var params = parameters(seed);
+    console.log(`[Worker-DEBUG] 1. Key Derivation (PBKDF2) starting...`);
     var aes_key = sjcl.misc.pbkdf2(password, params.seed, 1000, 256);
+    previewBytes("Derived AES Key", aes_key);
+    
     var uarr = new Uint8Array(file);
+    console.log(`[Worker-DEBUG] 2. Encrypted Input Blob Size: ${uarr.byteLength} bytes`);
+    
+    // Check for custom header
     var hasheader = true;
     for (var i = 0; i < fileheader.length; i++) {
         if (uarr[i] != fileheader[i]) {
@@ -93,15 +100,27 @@ function decrypt(file, seed, id, password) {
         }
     }
     if (hasheader) {
+        console.log('[Worker-DEBUG] 3. File Magic Header Found (Valid SecureFileX container). Stripping...');
         uarr = uarr.subarray(fileheader.length);
+    } else {
+        console.warn('[Worker-DEBUG] 3. No File Magic Header found (Legacy or Raw AES).');
     }
+    
     var before = sjcl.codec.bytes.toBits(uarr);
     var prp = new sjcl.cipher.aes(aes_key);
-    var after = sjcl.mode.ccm.decrypt(prp, before, params.iv);
     
-    // --- FIX: Use the optimized converter ---
-    // OLD: var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
-    var afterarray = bitsToUint8Array(after);
+    console.log('[Worker-DEBUG] 4. Running AES-CCM Decryption & Integrity Check...');
+    try {
+        var after = sjcl.mode.ccm.decrypt(prp, before, params.iv);
+        console.log('%c[Worker-DEBUG] 5. INTEGRITY CHECK PASSED (MAC Valid).', 'color: #198754');
+    } catch (e) {
+        console.error('[Worker-DEBUG] Decryption FAILED. MAC Mismatch (Wrong Password or Tampered Data).');
+        throw e;
+    }
+
+    var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
+    
+    // Extract JSON Header
     var header = '';
     var headerview = new DataView(afterarray.buffer);
     var i = 0;
@@ -113,26 +132,39 @@ function decrypt(file, seed, id, password) {
         header += String.fromCharCode(num);
     }
     var headerData = JSON.parse(header);
+    console.log('[Worker-DEBUG] 6. Extracted Internal Metadata:', headerData);
+
     var data = new Blob([afterarray]);
+    // Slicing off the JSON header to get pure file content
+    var finalFile = data.slice((i * 2) + 2, data.size, headerData.mime);
+    
+    console.log(`[Worker-DEBUG] 7. Final Decrypted File Size: ${finalFile.size} bytes`);
+    console.log('%c[Worker-DEBUG] --- DECRYPTION COMPLETE ---', 'color: #198754; font-weight: bold;');
+
     postMessage({
         'id': id,
         'type': 'decrypt_result',
         'ident': sjcl.codec.base64url.fromBits(params.ident),
         'header': headerData,
-        'decrypted': data.slice((i * 2) + 2, data.size, headerData.mime)
+        'decrypted': finalFile
     });
 }
 
+// --- UPDATED IDENT FUNCTION (To show hash resolution) ---
 function ident(seed, id) {
+    console.log(`[Worker-DEBUG] Resolving File ID from URL Hash (SHA-512)...`);
     var params = parameters(seed);
+    var identStr = sjcl.codec.base64url.fromBits(params.ident);
+    console.log(`[Worker-DEBUG] Resolved Ident: ${identStr}`);
     postMessage({
         'id': id,
         'type': 'ident_result',
-        'ident': sjcl.codec.base64url.fromBits(params.ident)
+        'ident': identStr
     });
 }
 
 function encrypt_face(pubKeyBase64, faceDataUri, id) {
+    console.log('[Worker-DEBUG] Encrypting Facial Biometric Data (Zero-Knowledge)...');
     var pubKeyPoint = sjcl.codec.base64.toBits(pubKeyBase64);
     var pubKey = new sjcl.ecc.elGamal.publicKey(
         sjcl.ecc.curves.c256,
@@ -146,6 +178,7 @@ function encrypt_face(pubKeyBase64, faceDataUri, id) {
         ts: 128,
         v: 1
     });
+    console.log('[Worker-DEBUG] Face Data Encrypted successfully.');
     postMessage({
         'id': id,
         'type': 'encrypt_face_result',
@@ -154,6 +187,7 @@ function encrypt_face(pubKeyBase64, faceDataUri, id) {
 }
 
 function encrypt_totp(pubKeyBase64, totpSecret, id) {
+    console.log('[Worker-DEBUG] Encrypting TOTP Secret...');
     var pubKeyPoint = sjcl.codec.base64.toBits(pubKeyBase64);
     var pubKey = new sjcl.ecc.elGamal.publicKey(
         sjcl.ecc.curves.c256,
@@ -175,6 +209,10 @@ function encrypt_totp(pubKeyBase64, totpSecret, id) {
 }
 
 function onprogress(id, progress) {
+    // Reduce console spam, only log every 20%
+    if (Math.floor(progress * 100) % 20 === 0) {
+        // console.log(`[Worker-DEBUG] AES Progress: ${Math.floor(progress * 100)}%`);
+    }
     postMessage({
         'id': id,
         'eventsource': 'encrypt',

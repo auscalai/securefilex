@@ -28,17 +28,26 @@ worker.onmessage = function (e) {
     if (e.data.type == 'progress') {
         promises[e.data.id].notify(e.data);
     } else if (e.data.type == 'error') {
-        console.error("Worker Error:", e.data.message);
+        console.error("[Client-DEBUG] Worker Error:", e.data.message);
         promises[e.data.id].reject(e.data.message);
         delete promises[e.data.id];
     } else {
         if (e.data.type === 'decrypt_result' && typeof e.data.header === 'undefined') {
             var errorMsg = "Malformed worker response: missing header";
-            console.error("Worker Error:", errorMsg, e.data);
+            console.error("[Client-DEBUG] Worker Error:", errorMsg, e.data);
             promises[e.data.id].reject(errorMsg);
             delete promises[e.data.id];
             return;
         }
+        // DEBUG LOGS
+        if (e.data.type === 'encrypt_result') {
+            console.log(`[Client-DEBUG] Worker finished encryption.`);
+        } else if (e.data.type === 'decrypt_result') {
+            console.log(`[Client-DEBUG] Worker finished decryption. File ready for download.`);
+        } else if (e.data.type === 'ident_result') {
+            console.log(`[Client-DEBUG] Worker resolved Ident.`);
+        }
+        
         promises[e.data.id].resolve(e.data);
         delete promises[e.data.id];
     }
@@ -53,6 +62,8 @@ function getpromise() {
     return promise;
 }
 crypt.encrypt = function (file, name, password) {
+    console.log(`[Client-DEBUG] Preparing to read file: ${name} (${file.size} bytes)`);
+    
     var extension = file.type.split('/');
     var header = JSON.stringify({
         'mime': file.type,
@@ -63,21 +74,20 @@ crypt.encrypt = function (file, name, password) {
     var promise = getpromise();
     var fr = new FileReader();
     
-    // --- FIX: Report File Reading Progress ---
     fr.onprogress = function(e) {
         if (e.lengthComputable) {
             promise.notify({
                 id: promise.id,
-                eventsource: 'reading', // New event source
+                eventsource: 'reading',
                 loaded: e.loaded,
                 total: e.total,
                 type: 'progress'
             });
         }
     };
-    // ----------------------------------------
 
     fr.onload = function () {
+        console.log(`[Client-DEBUG] File read into RAM. Sending to Web Worker...`);
         worker.postMessage({
             'action': 'encrypt',
             'data': this.result,
