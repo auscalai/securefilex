@@ -1,4 +1,4 @@
-// --- Helper function for error animation ---
+// --- Generic Modal Setup Factory ---
 function setupPrompt(config) {
     if (window[config.globalGetFn] || document.getElementById(config.modalId)) return;
 
@@ -13,10 +13,21 @@ function setupPrompt(config) {
     let actionType = 'CANCEL'; 
     let submissionData = null; 
 
+    // --- INTERNAL HELPER: Shake Animation (Defined inside to ensure scope) ---
+    const shakeModal = () => {
+        if (cardElement) {
+            anime({ 
+                targets: cardElement, 
+                translateX: [-10, 10, -10, 10, 0], 
+                duration: 300, 
+                easing: 'easeInOutSine' 
+            });
+        }
+    };
+
     // --- BUTTON CLICK HANDLER ---
     $(`#${config.submitBtnId}`).on('click', () => {
-        // --- FIX 1: Remove focus from button before hiding ---
-        // This prevents "Blocked aria-hidden" error because the focus is no longer inside the modal
+        // Fix: Remove focus to prevent "aria-hidden" errors
         if (document.activeElement) document.activeElement.blur();
 
         const captureProxy = (data) => {
@@ -31,7 +42,6 @@ function setupPrompt(config) {
         $(`#${config.inputId}`).on('keypress', e => { 
             if (e.which === 13) { 
                 e.preventDefault(); 
-                // --- FIX 2: Also blur input on Enter key ---
                 if (document.activeElement) document.activeElement.blur();
                 $(`#${config.submitBtnId}`).click(); 
             } 
@@ -67,12 +77,11 @@ function setupPrompt(config) {
         actionType = 'CANCEL'; 
         modalElement.show();
         
-        // Ensure input gets focus AFTER modal is shown (prevents premature focus error)
         if(config.inputId) {
             setTimeout(() => $(`#${config.inputId}`).focus(), 500);
         }
         
-        if (errText) shakeModal(cardElement);
+        if (errText) shakeModal();
     };
 
     window[config.globalErrorFn] = (msg) => {
@@ -82,11 +91,10 @@ function setupPrompt(config) {
         
         actionType = 'CANCEL'; 
         modalElement.show(); 
-        shakeModal(cardElement);
+        shakeModal();
     };
 
     window[config.globalStopFn] = () => {
-        // --- FIX 3: Remove focus if programmatically closing ---
         if (document.activeElement) document.activeElement.blur();
         
         actionType = 'SUBMIT'; 
