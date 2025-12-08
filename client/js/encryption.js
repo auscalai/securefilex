@@ -6,6 +6,36 @@ importScripts('../deps/bn.js');
 importScripts('../deps/ecc.js');
 importScripts('../deps/convenience.js');
 
+// --- MEMORY OPTIMIZATION HELPER ---
+// This function converts SJCL bitArrays directly to Uint8Arrays.
+// It avoids creating a massive intermediate standard Array, preventing
+// "Invalid array length" errors and browser crashes on large files.
+function bitsToUint8Array(bitArray) {
+    var len = sjcl.bitArray.bitLength(bitArray);
+    var bytes = len / 8;
+    var out = new Uint8Array(bytes);
+    var tmp;
+    
+    for (var i = 0; i < bitArray.length; i++) {
+        tmp = bitArray[i];
+        // Write 4 bytes from the 32-bit word
+        var base = i * 4;
+        if (base + 3 < bytes) {
+            out[base]     = (tmp >>> 24) & 0xff;
+            out[base + 1] = (tmp >>> 16) & 0xff;
+            out[base + 2] = (tmp >>> 8)  & 0xff;
+            out[base + 3] =  tmp         & 0xff;
+        } else {
+            // Handle the edge case for the very last bytes
+            var remaining = bytes - base;
+            for (var z = 0; z < remaining; z++) {
+                out[base + z] = (tmp >>> (24 - z * 8)) & 0xff;
+            }
+        }
+    }
+    return out;
+}
+
 // Helper to print bytes for debugging
 function previewBytes(name, bitArray) {
     var hex = sjcl.codec.hex.fromBits(bitArray);
@@ -31,7 +61,7 @@ function parameters(seed) {
     return parametersfrombits(seed);
 }
 
-// --- ENCRYPT FUNCTION WITH TIMING ---
+// --- ENCRYPT FUNCTION ---
 function encrypt(file, seed, id, password) {
     console.log('------------------------------------------------');
     console.log('[Worker-DEBUG] STARTING ENCRYPTION JOB');
@@ -54,7 +84,10 @@ function encrypt(file, seed, id, password) {
     console.log('[Worker-DEBUG] Running AES-CCM Encryption...');
     var after = sjcl.mode.ccm.encrypt(prp, before, params.iv);
     
-    var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
+    // --- OPTIMIZED CONVERSION ---
+    // Was: var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
+    var afterarray = bitsToUint8Array(after); 
+    // ----------------------------
     
     // STOP TIMER
     var endTime = performance.now();
@@ -82,7 +115,7 @@ var fileheader = [
     85, 80, 49, 0
 ];
 
-// --- DECRYPT FUNCTION WITH TIMING ---
+// --- DECRYPT FUNCTION ---
 function decrypt(file, seed, id, password) {
     console.log('%c[Worker-DEBUG] --- STARTING DECRYPTION JOB ---', 'color: #198754; font-weight: bold;');
     
@@ -121,7 +154,10 @@ function decrypt(file, seed, id, password) {
         throw e;
     }
 
-    var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
+    // --- OPTIMIZED CONVERSION ---
+    // Was: var afterarray = new Uint8Array(sjcl.codec.bytes.fromBits(after));
+    var afterarray = bitsToUint8Array(after);
+    // ----------------------------
     
     // STOP TIMER
     var endTime = performance.now();
