@@ -22,10 +22,11 @@ This project was developed as a Final Year Capstone Project for a BSc (Hons) in 
     - [Upload Flow](#upload-flow)
     - [Download Flow](#download-flow)
   - [Security Architecture](#security-architecture)
-    - [1. Key Derivation](#1-key-derivation)
-    - [2. File Encryption](#2-file-encryption)
-    - [3. 2FA Secret Protection (Hybrid Encryption)](#3-2fa-secret-protection-hybrid-encryption)
-    - [4. Secure Deletion](#4-secure-deletion)
+    - [1. Component Derivation (SeedHash128)](#1-component-derivation-seedhash128)
+    - [2. Key Derivation](#2-key-derivation)
+    - [3. File Encryption](#3-file-encryption)
+    - [4. 2FA Secret Protection (Hybrid Encryption)](#4-2fa-secret-protection-hybrid-encryption)
+    - [5. Secure Deletion](#5-secure-deletion)
   - [Technology Stack](#technology-stack)
     - [Frontend (Client-Side)](#frontend-client-side)
     - [Backend (Server-Side)](#backend-server-side)
@@ -60,68 +61,77 @@ SecureFileX is designed from the ground up for maximum security and privacy.
 
 ## How it Works
 
-The entire process is designed to ensure the server never has access to the user's password or the unencrypted file content.
+The entire process is designed to ensure the server never has access to the user's password, the unencrypted file content, or the encryption keys.
 
 ### Upload Flow
 
 1.  **Input:** A user drags and drops a file or writes a text memo using the `textpaste` module.
 2.  **Configuration:** The user is prompted to set a file expiration time and a strong password.
 3.  **2FA Setup (Optional):**
-      * The user can choose to add **Facial Recognition** or **TOTP** (e.g., Google Authenticator) 2FA.
-      * The browser requests the server's **public ECC key** from the `/public_key` endpoint.
-      * The 2FA secret (the initial face data URI or the TOTP secret key) is **encrypted in the browser** using the server's public key (via SJCL's ElGamal implementation).
-4.  **Client-Side Encryption:**
-      * A random 16-byte `seed` is generated, which will be part of the final share URL.
-      * This `seed` is used as the **salt** for `PBKDF2`.
-      * The user's password + `seed` are fed into `PBKDF2` to create the `AES-256` key.
-      * The file is encrypted in a web worker (`encryption.js`) using `AES-256-CCM`.
+      * The user can choose to add **Facial Recognition** or **TOTP** 2FA.
+      * The browser requests the server's **public ECC key**.
+      * The 2FA secret (the initial face data URI or the TOTP secret key) is **encrypted in the browser** using the server's public key.
+4.  **Client-Side Cryptography:**
+      * A random **Seed** is generated.
+      * **Seed Hashing:** The seed is hashed (SHA-512) to generate `SeedHash128`.
+      * **IV Generation:** The **3rd Quarter** of `SeedHash128` is extracted to serve as the Initialization Vector (IV) for AES-CCM.
+      * **Identifier Generation:** The **4th Quarter** of `SeedHash128` is extracted to serve as the public file identifier (filename).
+      * **Key Derivation:** The original `Seed` (as salt) and the user's password are fed into `PBKDF2` to create the `AES-256` key.
+      * **Encryption:** The file is encrypted in a web worker using `AES-256-CCM` with the derived Key and IV.
 5.  **Upload:**
-      * The main encrypted file blob and the (optionally) asymmetrically encrypted 2FA blob are combined and sent to the server.
-      * The server stores this combined blob on disk and knows nothing about its contents.
-6.  **Done:** The user receives a share link (e.g., `/#<seed>`). The server also provides a `delkey` (delete key) which is stored in the user's `localStorage`.
+      * The encrypted file blob and the (optionally) encrypted 2FA blob are combined and sent to the server.
+      * The server saves the file using the identifier (4th Quarter of `SeedHash128`) and knows nothing about the contents or the seed.
+6.  **Done:** The user receives a share link containing the `Seed` (e.g., `/#<seed>`).
 
 ### Download Flow
 
-1.  **Access:** A user visits the share link. The browser's JavaScript (`download.js`) reads the `seed` from the URL hash.
-2.  **Auth Check:**
-      * The browser sends a file identifier (derived from the `seed`) to the `/check_auth_type/:ident` endpoint.
-      * The server checks the file's footer for "FACE" or "TOTP" magic bytes and tells the browser which 2FA method is required (if any).
-3.  **2FA Verification (If-Enabled):**
-      * The browser prompts the user for 2FA (e.g., `getFaceScan()` or `getTOTPCode()`).
-      * The user provides their live face scan or 6-digit TOTP code.
-      * This is sent to the server (e.g., `/verify_face/:ident`).
-      * The **server** uses its **private ECC key** to decrypt the 2FA secret stored with the file.
-      * It compares the decrypted original (e.g., the original face data) against the user's new submission (the live scan) using DeepFace.
-4.  **File Download:**
-      * If 2FA is not required, or if the 2FA challenge is successful, the server sends the main encrypted file blob to the browser.
-5.  **Client-Side Decryption:**
-      * The browser prompts the user for the password (`getPassword()`).
-      * The `seed` from the URL and the user's password are fed into `PBKDF2` to re-create the exact same `AES-256` key.
-      * The file is decrypted in the browser using `AES-256-CCM` (`encryption.js` worker) and displayed or offered for download.
+1.  **Access:** A user visits the share link. The browser reads the `Seed` from the URL hash.
+2.  **Derivation:**
+      * The browser re-calculates `SeedHash128` from the URL seed.
+      * It derives the file identifier from the **4th Quarter** of that hash.
+3.  **Auth Check:**
+      * The browser sends the identifier to the `/check_auth_type/:ident` endpoint.
+      * The server checks for "FACE" or "TOTP" requirements.
+4.  **2FA Verification (If-Enabled):**
+      * The user provides their face scan or TOTP code.
+      * The server verifies this against the stored secret (using its private ECC key to decrypt the stored proof).
+      * It compares the decrypted secret against the user's new submission.
+5.  **File Download & Decryption:**
+      * The server sends the encrypted blob.
+      * The browser prompts for the password.
+      * It regenerates the `AES-256` Key (Password + Seed) and the IV (**3rd Quarter** of `SeedHash128`).
+      * The file is decrypted in the browser using `AES-256-CCM`.
 
 -----
 
 ## Security Architecture
 
-### 1\. Key Derivation
+### 1. Component Derivation (SeedHash128)
+
+To ensure zero-knowledge architecture, the system derives specific cryptographic components from a client-side generated `Seed`. The `Seed` is processed via SHA-512 to create a `SeedHash128` structure, which is split for specific uses:
+
+*   **AES-CCM IV:** The **3rd Quarter** of `SeedHash128` is used as the Initialization Vector for file encryption. This ensures a unique IV for every file without sending it explicitly over the network.
+*   **File Identifier:** The **4th Quarter** of `SeedHash128` is used as the public reference ID (filename) on the server. Because the server only sees this hash segment, it cannot reverse-engineer the original `Seed` or the IV.
+
+### 2. Key Derivation
 
 The AES encryption key is generated in the browser and never sent to the server.
 
-`User Password` + `Random Seed (Salt)` → `PBKDF2 (1000 rounds)` → `AES-256 Key`
+`User Password` + `Seed (Salt)` → `PBKDF2 (1000 rounds)` → `AES-256 Key`
 
   * **File:** `encryption.js`
   * **Function:** `sjcl.misc.pbkdf2(password, params.seed, 1000, 256)`
 
-### 2\. File Encryption
+### 3. File Encryption
 
-The file content is encrypted using an authenticated encryption cipher (AES-CCM), which ensures both confidentiality and integrity (protection against tampering).
+The file content is encrypted using `AES-256-CCM`, an authenticated encryption mode that provides both confidentiality and integrity.
 
-`Original File` + `AES-256 Key` → `AES-256-CCM Encryption` → `Encrypted File Blob`
+`Original File` + `AES-256 Key` + `IV (3rd Qtr SeedHash128)` → `AES-CCM Encrypted Blob`
 
   * **File:** `encryption.js`
-  * **Function:** `sjcl.mode.ccm.encrypt(prp, before, params.iv)`
+  * **Function:** `sjcl.mode.ccm.encrypt(prp, before, iv)`
 
-### 3\. 2FA Secret Protection (Hybrid Encryption)
+### 4. 2FA Secret Protection (Hybrid Encryption)
 
 The 2FA secrets (face data/TOTP secret) are protected using an **Asymmetric Hybrid Encryption** scheme. This ensures that only the server can access the secrets, and only when a user with the correct file link initiates a download.
 
@@ -133,13 +143,11 @@ The 2FA secrets (face data/TOTP secret) are protected using an **Asymmetric Hybr
 
 **Verification (Download):**
 
-1.  A user with the link initiates a download (e.g., `/verify_face/:ident`).
-2.  The server is prompted to verify the user (e.g., with a new face scan).
-3.  The server uses its **private ECC key** to decrypt the 2FA secret stored with the file (`sjcl.decrypt(getECCKeys().sec, encryptedJson)`).
-4.  It compares the decrypted secret (the original face data) against the user's new submission (the live face scan) using DeepFace.
-5.  Only if they match is the main encrypted file blob sent to the user's browser for password decryption.
+1.  The server uses its **private ECC key** to decrypt the 2FA secret stored with the file (`sjcl.decrypt(getECCKeys().sec, encryptedJson)`).
+2.  It compares the decrypted secret (the original face data) against the user's new submission (the live face scan) using DeepFace.
+3.  Only if they match is the main encrypted file blob sent to the user's browser for password decryption.
 
-### 4\. Secure Deletion
+### 5. Secure Deletion
 
   * **Manual:** A `delkey` is generated on upload using a server-side secret (`crypto.createHmac('sha256', config.delete_key).update(ident).digest('hex')`). The `/del` endpoint will only delete a file if this key is provided, preventing unauthorized deletions.
   * **Automatic:** The `startCleanupJob` in `server.js` runs every 5 minutes (`*/5 * * * *`), checks the `meta` directory for files with expired timestamps, and deletes both the metadata and the encrypted file from the disk.
@@ -171,13 +179,13 @@ The 2FA secrets (face data/TOTP secret) are protected using an **Asymmetric Hybr
 
 ## Setup and Installation
 
-### 1\. Prerequisites
+### 1. Prerequisites
 
   * [**Node.js**](https://nodejs.org/en/download/) (v16 or later) and npm.
   * [**Python**](https://www.python.org/downloads/) (v3.8 or later) and pip (for the DeepFace server).
   * A command-line interface (Terminal, PowerShell, etc.).
 
-### 2\. Backend Server Setup
+### 2. Backend Server Setup
 
 1.  Navigate to the `server` directory:
 
@@ -227,7 +235,7 @@ The 2FA secrets (face data/TOTP secret) are protected using an **Asymmetric Hybr
     }
     ```
 
-### 3\. Frontend Client Setup
+### 3. Frontend Client Setup
 
 1.  Navigate to the `client` directory.
 2.  Edit `config.js` to match your server's URL and API key.
@@ -237,7 +245,7 @@ The 2FA secrets (face data/TOTP secret) are protected using an **Asymmetric Hybr
     upload.config.api_key = 'your_strong_and_secret_api_key'; // MUST match the api_key in server.conf
     ```
 
-### 4\. DeepFace Server Setup
+### 4. DeepFace Server Setup
 
 The facial recognition feature depends on a separate Python server.
 
@@ -256,7 +264,7 @@ The facial recognition feature depends on a separate Python server.
 
     *(Note: `deepface` will download large machine learning models on its first run.)*
 
-### 5\. Running the Application
+### 5. Running the Application
 
 1.  **Start the DeepFace server** (if you are using it).
 2.  **Start the Node.js server** from the `server` directory:
