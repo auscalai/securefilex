@@ -64,6 +64,7 @@ SecureFileX is designed from the ground up for maximum security and privacy.
 The entire process is designed to ensure the server never has access to the user's password, the unencrypted file content, or the encryption keys.
 
 ### Upload Flow
+<img width="1466" height="686" alt="image" src="https://github.com/user-attachments/assets/2272b505-3f60-44be-bded-123bbbd009e9" />
 
 1.  **Input:** A user drags and drops a file or writes a text memo using the `textpaste` module.
 2.  **Configuration:** The user is prompted to set a file expiration time and a strong password.
@@ -84,6 +85,7 @@ The entire process is designed to ensure the server never has access to the user
 6.  **Done:** The user receives a share link containing the `Seed` (e.g., `/#<seed>`).
 
 ### Download Flow
+<img width="1233" height="863" alt="image" src="https://github.com/user-attachments/assets/074dc5ce-4703-4819-92c2-b2cf8b3fe35b" />
 
 1.  **Access:** A user visits the share link. The browser reads the `Seed` from the URL hash.
 2.  **Derivation:**
